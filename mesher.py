@@ -2,6 +2,7 @@
 import cmd 
 import matplotlib.pyplot as plt
 import numpy as np
+import copy 
 
 plt.ion()
 
@@ -17,7 +18,7 @@ def line_line_intersection(a1, a2, b1, b2):
     
     return (a_intersect, ts)
 
-class helloworld(cmd.Cmd):
+class mesher(cmd.Cmd):
     
     show_edges = True
     show_vertices = True
@@ -26,7 +27,7 @@ class helloworld(cmd.Cmd):
     show_vertex_numbering = True
     threshold = 1.e-5
 
-    def __init__(self):
+    def __init__(self): 
         cmd.Cmd.__init__(self)
 
         self.vertices = []
@@ -35,6 +36,25 @@ class helloworld(cmd.Cmd):
     def emptyline(self):
         pass
 
+    def do_toggle(self, list):
+        """ Toggles what is shown in the graph.  
+        """
+        split_list = list.split()
+        if "numbers" == split_list[0]:
+            if split_list[1] == "edges":
+                self.show_edge_numbering = not self.show_edge_numbering
+
+            if split_list[1] == "vertex":
+                self.show_vertex_numbering = not self.show_vertex_numbering
+        
+        elif split_list[0] == "edges":
+            self.show_edges = not self.show_edges
+            self.show_edge_numbering = False
+
+        elif split_list[0] == "vertex":
+            self.show_vertices = not self.show_vertices
+            self.show_vertex_numbering = False
+            
     def do_show(self, list):
         plt.clf()
         if self.show_vertices:
@@ -70,12 +90,10 @@ class helloworld(cmd.Cmd):
         self.edges.append([e1, e2])
         print "new edge","[", len(self.edges)-1 , "]", e1, "<->", e2
 
-    def do_intersect_edge(self, list):
+    def intersect_edge(self, edge_index):
         """ For a given edge number, intersect it 
         with all other edges in the graph. 
         """
-        list_split = list.split()
-        edge_index = int(list_split[0])
         edge = self.edges[edge_index]
         point1 = self.vertices[edge[0]]
         point2 = self.vertices[edge[1]]
@@ -96,19 +114,26 @@ class helloworld(cmd.Cmd):
                                                                point2,
                                                                current_point1,
                                                                current_point2)
-                if intersection != None:
-                    if 0<=param[0]<=1 and 0<=param[1]<=1:
-                        if abs(param[0])<self.threshold:
-                            edge_mod.append([current_index, edge[0]])
-                        elif abs(param[0]-1)<self.threshold:
-                            edge_mod.append([current_index, edge[1]])
+                if (abs(param[0])<self.threshold or abs(param[0]-1)<self.threshold) and \
+                        (abs(param[1])<self.threshold or abs(param[1]-1)<self.threshold):
+                    pass
+                elif 0-self.threshold<=param[0]<=1.+self.threshold \
+                        and 0.-self.threshold<=param[1]<=1.+self.threshold:
+                    if abs(param[0])<self.threshold:
+                        edge_mod.append([current_index, edge[0]])
+                    elif abs(param[0]-1)<self.threshold:
+                        edge_mod.append([current_index, edge[1]])
 
+                    else:
+                        if abs(param[1]) < self.threshold:
+                            segments.append([param[0], current_edge[0]])
+                        elif  abs(param[1]-1.) < self.threshold:
+                            segments.append([param[0], current_edge[1]])
                         else:
                             self.vertices.append(intersection)
                             new_point = len(self.vertices)-1
                             edge_mod.append([current_index, new_point])
                             segments.append([param[0], new_point])
-
 
         for current_mod in edge_mod:
             current_index = current_mod[0]
@@ -120,12 +145,44 @@ class helloworld(cmd.Cmd):
 
         segments.append([1. , self.edges[edge_index][1]])
         self.edges[edge_index][1]=segments[0][1]
-        
+        done_edges = set()
+        done_edges.add(edge_index)
+
         for seg_index in range(len(segments)-1):
             v1  = segments[seg_index][1]
             v2 = segments[seg_index+1][1]
             self.edges.append([v1, v2])
+            done_edges.add(len(self.edges)-1)
+        return done_edges
+
+    def do_remove_edge(self, list):
+        """ Removes edge from graph. 
+        """
+        index = int(list.split()[0])
+        self.edges.pop(index)
+        
+    def do_intersect_all(self, list):
+        """ Intersect all edges. 
+        """
+
+        current_index = 0
+        done_edges = set() 
+        while current_index < len(self.edges):
             
+            if current_index not in done_edges:
+                done_edges.union(self.intersect_edge(current_index))
+
+            current_index += 1
+        
+        
+    def do_intersect_edge(self, list):
+        """ For a given edge number, intersect it 
+        with all other edges in the graph. 
+        """
+        list_split = list.split()
+        edge_index = int(list_split[0])
+        self.intersect_edge(edge_index)
+
     def do_load_commands(self, list):
         file = open(list)
         for line in file:
@@ -169,4 +226,4 @@ class helloworld(cmd.Cmd):
                                        ij_to_point[(i, j+1)]])
                     
         
-helloworld().cmdloop()
+mesher().cmdloop()
