@@ -36,26 +36,47 @@ class mesher(cmd.Cmd):
     def emptyline(self):
         pass
 
-    def do_toggle(self, list):
+    def do_toggle(self, line):
         """ Toggles what is shown in the graph.  
         """
-        split_list = list.split()
-        if "numbers" == split_list[0]:
-            if split_list[1] == "edges":
+        split_line = line.split()
+        if "numbers" == split_line[0]:
+            if split_line[1] == "edges":
                 self.show_edge_numbering = not self.show_edge_numbering
 
-            if split_list[1] == "vertex":
+            if split_line[1] == "vertex":
                 self.show_vertex_numbering = not self.show_vertex_numbering
         
-        elif split_list[0] == "edges":
+        elif split_line[0] == "edges":
             self.show_edges = not self.show_edges
             self.show_edge_numbering = False
 
-        elif split_list[0] == "vertex":
+        elif split_line[0] == "vertex":
             self.show_vertices = not self.show_vertices
             self.show_vertex_numbering = False
+
+    def do_refresh(self, line):
+        temp_axis = plt.axis()
+        plt.clf()
+        if self.show_vertices:
+            for (index, point) in enumerate(self.vertices):
+                plt.scatter(point[0], point[1])
+                if self.show_vertex_numbering:
+                    plt.text(point[0], point[1], str(index))
+
+        if self.show_edges:
+            for (index, edge) in enumerate(self.edges):
+                point1 = self.vertices[edge[0]]
+                point2 = self.vertices[edge[1]]
+                plt.plot([point1[0], point2[0]], 
+                         [point1[1], point2[1]], 'k-')
+                if self.show_edge_numbering:
+                    mid_point = (point1+point2)/2.
+                    plt.text(mid_point[0], mid_point[1], str(index))
+        plt.axis(temp_axis)
+        plt.show()        
             
-    def do_show(self, list):
+    def do_show(self, line):
         plt.clf()
         if self.show_vertices:
             for (index, point) in enumerate(self.vertices):
@@ -74,21 +95,22 @@ class mesher(cmd.Cmd):
                     plt.text(mid_point[0], mid_point[1], str(index))
         plt.show()        
 
-    def do_greet(self, list):
+    def do_greet(self, line):
         print "Hello World" 
 
-    def do_EOF(self, list):
+    def do_EOF(self, line):
         return True
 
-    def do_add_vertex(self, list):
-        new_point = np.array(map(float, list.split()))
+    def do_add_vertex(self, line):
+        new_point = np.array(map(float, line.split()))
         self.vertices.append(new_point)
         print "new vertex", "[", len(self.vertices)-1, "]", new_point
 
-    def do_add_edge(self, list):
-        [e1, e2] = map(int, list.split())
+    def do_add_edge(self, line):
+        [e1, e2] = map(int, line.split())
         self.edges.append([e1, e2])
         print "new edge","[", len(self.edges)-1 , "]", e1, "<->", e2
+
 
     def intersect_edge(self, edge_index):
         """ For a given edge number, intersect it 
@@ -155,13 +177,13 @@ class mesher(cmd.Cmd):
             done_edges.add(len(self.edges)-1)
         return done_edges
 
-    def do_remove_edge(self, list):
+    def do_remove_edge(self, line):
         """ Removes edge from graph. 
         """
-        index = int(list.split()[0])
+        index = int(line.split()[0])
         self.edges.pop(index)
         
-    def do_intersect_all(self, list):
+    def do_intersect_all(self, line):
         """ Intersect all edges. 
         """
 
@@ -175,33 +197,33 @@ class mesher(cmd.Cmd):
             current_index += 1
         
         
-    def do_intersect_edge(self, list):
+    def do_intersect_edge(self, line):
         """ For a given edge number, intersect it 
         with all other edges in the graph. 
         """
-        list_split = list.split()
-        edge_index = int(list_split[0])
+        line_split = line.split()
+        edge_index = int(line_split[0])
         self.intersect_edge(edge_index)
 
-    def do_load_commands(self, list):
-        file = open(list)
+    def do_load_commands(self, line):
+        file = open(line)
         for line in file:
             if len(line.split())>0:
                 self.onecmd(line)
 
-    def do_build_mesh(self, list):
+    def do_build_mesh(self, line):
         """ Builds rectangular mesh. Input:
         [x dimension]
         [y dimension]
         [number of cells in x]
         [number of cells in y]
         """
-        split_list = list.split()
-        x_dim = float(split_list[0])
-        y_dim = float(split_list[1])
+        split_line = line.split()
+        x_dim = float(split_line[0])
+        y_dim = float(split_line[1])
         
-        nx = int(split_list[2])
-        ny = int(split_list[3])
+        nx = int(split_line[2])
+        ny = int(split_line[3])
         ij_to_point = {}
 
         dx = x_dim/nx
