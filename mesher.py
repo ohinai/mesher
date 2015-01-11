@@ -32,6 +32,7 @@ class mesher(cmd.Cmd):
 
         self.vertices = []
         self.edges = []
+        self.vert_to_edge = {}
 
     def emptyline(self):
         pass
@@ -95,8 +96,11 @@ class mesher(cmd.Cmd):
                     plt.text(mid_point[0], mid_point[1], str(index))
         plt.show()        
 
-    def do_greet(self, line):
-        print "Hello World" 
+    def do_polygons(self, line):
+        """ Compute all polgons in the graph
+        """
+        pass
+            
 
     def do_EOF(self, line):
         return True
@@ -106,11 +110,89 @@ class mesher(cmd.Cmd):
         self.vertices.append(new_point)
         print "new vertex", "[", len(self.vertices)-1, "]", new_point
 
-    def do_add_edge(self, line):
-        [e1, e2] = map(int, line.split())
-        self.edges.append([e1, e2])
-        print "new edge","[", len(self.edges)-1 , "]", e1, "<->", e2
+    def find_cc_position(self, index_v1, index_v2, edges):
+        """ Given edge p1->p2, find position so that 
+        all edges around p2 are counter-clockwise order. 
+        """
+        points = []
+        for edge_index in edges:
+            [current_v1, current_v2] = self.edges[edge_index]
+            if current_v1 == index_v2:
+                points.append(self.vertices[current_v2])
+            elif current_v2 == index_v2:
+                points.append(self.vertices[current_v1])
+            else:
+                print "vert_to_edge error"
 
+        p1 = self.vertices[index_v1]
+        p2 = self.vertices[index_v2]
+
+        signs = []
+        v1 = p2-p1
+        all_pos = True
+        all_neg = True
+        for point in points:
+            v2 = p2-point
+            if np.cross(np.array([v1[0], v1[1], 0.]),
+                        np.array([v2[0], v2[1], 0.]))[2] > 0.:
+                signs.append(1)
+                all_neg = False
+            else:
+                signs.append(-1)
+                all_pos = False
+
+        if all_pos:
+            return 0
+        if all_neg:
+            return len(points) 
+        if signs[-1]<0 and signs[0]>0:
+            return 0 
+        found_negative = False
+        for (index, sign) in enumerate(signs):
+            if sign < 0:
+                found_negative = True
+            if sign > 0 and found_negative:
+                return index
+
+    def do_show_v2e(self, line):
+        """ Shows the edges connected with 
+        a vertex.  
+        """
+        plt.clf()
+        v_index = int(line.split()[0])
+        print "showing vertices connected with", v_index
+        vertex = self.vertices[v_index]
+        plt.scatter(vertex[0], vertex[1])
+        for (loc, edge_index) in enumerate(self.vert_to_edge[v_index]):
+            [v1, v2] = self.edges[edge_index]
+            p1 = self.vertices[v1]
+            p2 = self.vertices[v2]
+            plt.plot([p1[0], p2[0]], [p1[1], p2[1]], 'k-')
+            center = (p2+p1)/2.
+            plt.text(center[0], center[1], str(loc))
+        plt.show()
+        
+    def add_edge(self, v1, v2):
+        self.edges.append([v1, v2])
+
+        if self.vert_to_edge.has_key(v1):
+            pos = self.find_cc_position(v2, v1, self.vert_to_edge[v1])
+            self.vert_to_edge[v1].insert(pos, len(self.edges)-1)
+        else:
+            self.vert_to_edge[v1] = [len(self.edges)-1]
+
+        if self.vert_to_edge.has_key(v2):
+            pos = self.find_cc_position(v1, v2, self.vert_to_edge[v2])
+            self.vert_to_edge[v2].insert(pos, len(self.edges)-1)
+        else:
+            self.vert_to_edge[v2] = [len(self.edges)-1]
+
+        return len(self.edges)-1
+
+    def do_add_edge(self, line):
+        [v1, v2] = map(int, line.split())
+        edge_index = self.add_edge(v1, v2)
+        print "new edge","[", edge_index , "]", v1, "<->", v2
 
     def intersect_edge(self, edge_index):
         """ For a given edge number, intersect it 
@@ -160,7 +242,7 @@ class mesher(cmd.Cmd):
         for current_mod in edge_mod:
             current_index = current_mod[0]
             point_index = current_mod[1]
-            self.edges.append([self.edges[current_index][1], point_index])
+            self.add_edge(self.edges[current_index][1], point_index)
             self.edges[current_index][1] = point_index
             
         segments.sort()
@@ -173,14 +255,17 @@ class mesher(cmd.Cmd):
         for seg_index in range(len(segments)-1):
             v1  = segments[seg_index][1]
             v2 = segments[seg_index+1][1]
-            self.edges.append([v1, v2])
-            done_edges.add(len(self.edges)-1)
+            new_edge_index = self.add_edge(v1, v2)
+            done_edges.add(new_edge_index)
         return done_edges
 
     def do_remove_edge(self, line):
         """ Removes edge from graph. 
         """
         index = int(line.split()[0])
+        [v1, v2] = self.edges(index)
+        self.vert_to_edge[v1].pop(index)
+        self.vert_to_edge[v2].pop(index)
         self.edges.pop(index)
         
     def do_intersect_all(self, line):
@@ -240,12 +325,12 @@ class mesher(cmd.Cmd):
             for j in range(ny+1):
                 
                 if i < nx:
-                    self.edges.append([ij_to_point[(i, j)], 
-                                       ij_to_point[(i+1, j)]])
+                    self.add_edge(ij_to_point[(i, j)], 
+                                  ij_to_point[(i+1, j)])
                 
                 if j < ny:
-                    self.edges.append([ij_to_point[(i, j)], 
-                                       ij_to_point[(i, j+1)]])
+                    self.add_edge(ij_to_point[(i, j)], 
+                                  ij_to_point[(i, j+1)])
                     
         
 mesher().cmdloop()
