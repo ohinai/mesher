@@ -115,6 +115,8 @@ class mesher(cmd.Cmd):
         all edges around p2 are counter-clockwise order. 
         """
         points = []
+        if len(edges)<1:
+            return 0
         for edge_index in edges:
             [current_v1, current_v2] = self.edges[edge_index]
             if current_v1 == index_v2:
@@ -175,24 +177,45 @@ class mesher(cmd.Cmd):
     def add_edge(self, v1, v2):
         self.edges.append([v1, v2])
 
-        if self.vert_to_edge.has_key(v1):
-            pos = self.find_cc_position(v2, v1, self.vert_to_edge[v1])
-            self.vert_to_edge[v1].insert(pos, len(self.edges)-1)
-        else:
-            self.vert_to_edge[v1] = [len(self.edges)-1]
-
-        if self.vert_to_edge.has_key(v2):
-            pos = self.find_cc_position(v1, v2, self.vert_to_edge[v2])
-            self.vert_to_edge[v2].insert(pos, len(self.edges)-1)
-        else:
-            self.vert_to_edge[v2] = [len(self.edges)-1]
-
+        self.update_v_to_e(len(self.edges)-1, v1, v2)
         return len(self.edges)-1
+
 
     def do_add_edge(self, line):
         [v1, v2] = map(int, line.split())
         edge_index = self.add_edge(v1, v2)
         print "new edge","[", edge_index , "]", v1, "<->", v2
+
+    def update_v_to_e(self, edge_index, v1, v2 ):
+        """ Updates the vertex to edge map 
+        for new edge. 
+        """
+        if self.vert_to_edge.has_key(v1):
+            pos = self.find_cc_position(v2, v1, self.vert_to_edge[v1])
+            self.vert_to_edge[v1].insert(pos, edge_index)
+        else:
+            self.vert_to_edge[v1] = [len(self.edges)-1]
+
+        if self.vert_to_edge.has_key(v2):
+            pos = self.find_cc_position(v1, v2, self.vert_to_edge[v2])
+            self.vert_to_edge[v2].insert(pos, edge_index)
+        else:
+            self.vert_to_edge[v2] = [edge_index]
+            
+
+    def set_edge(self, edge_index, v1, v2):
+        """ Modifies vertices of existing 
+        edge. 
+        """
+        [orig_v1, orig_v2] = self.edges[edge_index]
+
+        self.vert_to_edge[orig_v1].remove(edge_index)
+        self.vert_to_edge[orig_v2].remove(edge_index)
+
+        self.edges[edge_index][0] = v1
+        self.edges[edge_index][1] = v2
+
+        self.update_v_to_e(edge_index, v1, v2)
 
     def intersect_edge(self, edge_index):
         """ For a given edge number, intersect it 
@@ -243,17 +266,17 @@ class mesher(cmd.Cmd):
             current_index = current_mod[0]
             point_index = current_mod[1]
             self.add_edge(self.edges[current_index][1], point_index)
-            self.edges[current_index][1] = point_index
+            self.set_edge(current_index, self.edges[current_index][0], point_index )
             
         segments.sort()
 
         segments.append([1. , self.edges[edge_index][1]])
-        self.edges[edge_index][1]=segments[0][1]
+        self.set_edge(edge_index, self.edges[edge_index][0], segments[0][1])
         done_edges = set()
         done_edges.add(edge_index)
 
         for seg_index in range(len(segments)-1):
-            v1  = segments[seg_index][1]
+            v1 = segments[seg_index][1]
             v2 = segments[seg_index+1][1]
             new_edge_index = self.add_edge(v1, v2)
             done_edges.add(new_edge_index)
