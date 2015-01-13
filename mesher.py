@@ -9,6 +9,13 @@ import matplotlib.patches as patches
 import numpy as np
 import copy 
 
+
+import sys 
+
+sys.path.append("/h2/ohinai/sch.ps/research/repos/mimpy-frac/")
+
+from mimpy.mesh import mesh
+
 plt.ion()
 
 def line_line_intersection(a1, a2, b1, b2):
@@ -40,6 +47,8 @@ class mesher(cmd.Cmd):
         self.vert_to_edge = {}
 
         self.bounding_box = [[0., 0.], [0., 0.]]
+
+        self.polygons = None
 
     def emptyline(self):
         pass
@@ -144,104 +153,213 @@ class mesher(cmd.Cmd):
         local_index = self.vert_to_edge[vertex].index(edge_index)
         next_edge = self.vert_to_edge[vertex][local_index-1]
         return next_edge
-        
 
     def do_polygons(self, line):
         """ Compute all polgons in the graph.
         """
         done_edges = set()
         polygons = []
+        boundaries = []
         paths = []
+        index_paths = []
+        def direction_int(v1, v2):
+            point1 = self.vertices[v1]
+            point2 = self.vertices[v2]
+            return (point2[0]-point1[0])*(point2[1]+point1[1])
+
         for edge_index in range(len(self.edges)):
-            if edge_index in done_edges:
-                pass
-            else:
+            if (edge_index, 1) not in done_edges:
                 print edge_index
-                done_edges.add(edge_index)
+                direction_sum = 0.
                 current_polygon = [edge_index]
                 [current_v1, current_v2] = self.edges[edge_index]
                 original_v1 = current_v1
                 current_path = [self.vertices[current_v1], self.vertices[current_v2]]
-                
+                current_index_path = [(edge_index, 1)]
+                direction_sum += direction_int(current_v1, current_v2)
                 ## Loop counter-clockwise
                 next_edge = self.find_next_edge_cc(edge_index, current_v2)
-                done_edges.add(next_edge)
+
                 current_polygon.append(next_edge)
                 [next_v1, next_v2] = self.edges[next_edge]
+
                 if next_v1 == current_v2:
                     next_vertex = next_v2
+                    direction_sum += direction_int(next_v1, next_v2)
+                    done_edges.add((next_edge, 1))
+                    current_index_path.append((next_edge, 1))
+
                 elif next_v2 == current_v2:
                     next_vertex = next_v1
+                    direction_sum += direction_int(next_v2, next_v1)
+                    done_edges.add((next_edge, -1))
+                    current_index_path.append((next_edge, -1))
+
                 else:
                     raise Exception("Problem traversing graph")
                 while next_vertex != original_v1:
-                    #current_v1 = next_v1
-                    #current_v2 = next_v2
                     current_path.append(self.vertices[next_vertex])
+
                     next_edge = self.find_next_edge_cc(next_edge, next_vertex)
-                    done_edges.add(next_edge)
+
                     current_polygon.append(next_edge)
                     [next_v1, next_v2] = self.edges[next_edge]
+
                     if next_v1 == next_vertex:
                         next_vertex = next_v2
+                        direction_sum += direction_int(next_v1, next_v2)
+                        done_edges.add((next_edge, 1))
+                        current_index_path.append((next_edge, 1))
+
                     elif next_v2 == next_vertex:
                         next_vertex = next_v1
+                        direction_sum += direction_int(next_v2, next_v1)
+                        done_edges.add((next_edge, -1))
+                        current_index_path.append((next_edge, -1))
+
                     else:
                         raise Exception("Problem traversing graph")
 
-                polygons.append(current_polygon)
-                paths.append(current_path)
+                if direction_sum < 0:
+                    boundaries.append(current_polygon)
+                else:
+                    polygons.append(current_polygon)
+                    paths.append(current_path)
+                    index_paths.append(current_index_path)
+
+            if (edge_index, -1) not in done_edges:
+                ## Loop clockwise                
+                direction_sum = 0.
 
                 current_polygon = [edge_index]
                 [current_v1, current_v2] = self.edges[edge_index]
                 original_v1 = current_v1
                 current_path = [self.vertices[current_v1], self.vertices[current_v2]]
-                ## Loop clockwise
+                current_index_path = [(edge_index, -1)]
+                direction_sum += direction_int(current_v1, current_v2)
                 next_edge = self.find_next_edge_c(edge_index, current_v2)
-                done_edges.add(next_edge)
+
                 current_polygon.append(next_edge)
                 [next_v1, next_v2] = self.edges[next_edge]
                 if next_v1 == current_v2:
                     next_vertex = next_v2
+                    direction_sum += direction_int(next_v1, next_v2)
+                    done_edges.add((next_edge, -1))
+                    current_index_path.append((next_edge, -1))
+
                 elif next_v2 == current_v2:
                     next_vertex = next_v1
+                    direction_sum += direction_int(next_v2, next_v1)
+                    done_edges.add((next_edge, 1))
+                    current_index_path.append((next_edge, 1))
+
                 else:
                     raise Exception("Problem traversing graph")
                 while next_vertex != original_v1:
-                    #current_v1 = next_v1
-                    #current_v2 = next_v2
                     current_path.append(self.vertices[next_vertex])
+                    
                     next_edge = self.find_next_edge_c(next_edge, next_vertex)
-                    done_edges.add(next_edge)
+
                     current_polygon.append(next_edge)
                     [next_v1, next_v2] = self.edges[next_edge]
                     if next_v1 == next_vertex:
                         next_vertex = next_v2
+                        direction_sum += direction_int(next_v1, next_v2)
+                        done_edges.add((next_edge, -1))
+                        current_index_path.append((next_edge, -1))
                     elif next_v2 == next_vertex:
-                        next_vertex = next_v1
+                        next_vertex = next_v1                        
+                        direction_sum += direction_int(next_v2, next_v1)
+                        done_edges.add((next_edge, 1))
+                        current_index_path.append((next_edge, 1))
+
                     else:
                         raise Exception("Problem traversing graph")
 
+                if direction_sum > 0:
+                    boundaries.append(current_polygon)
+                else:
+                    polygons.append(current_polygon)
+                    paths.append(current_path)
+                    current_index_path.reverse()
+                    index_paths.append(current_index_path)
+                    
+        self.polygons = index_paths
 
-
-
-                polygons.append(current_polygon)
-                paths.append(current_path)
-            
         fig=pylab.figure()
         ax=fig.add_subplot(111)
-        paths = paths[1:]
         patches = map(lambda x:Polygon(x, True), map(lambda x:np.array(x), paths))
         p = PatchCollection(patches,cmap=matplotlib.cm.jet,  alpha=1.0)
 
-        p.set_array(np.random.rand(len(paths)))
+#        p.set_array(np.random.rand(len(paths)))
+        p.set_array(np.ones(len(paths)))
         ax.add_collection(p)
         p.set_clim([0., 1.])
 
         ax.autoscale_view(True, True, True)
 
         pylab.show()
+    
+    def do_mimpy_mesh(self, line):
+        """ Produces a mimpy mesh from the 
+        graph and stores in the filename specified.  
+        """
+        res_mesh = mesh.Mesh()
+        
+        file_name = line
+
+        for point in self.vertices:
+            res_mesh.add_point(np.array([point[0], point[1], 0.]))
+        
+        for (index, point) in enumerate(self.vertices):
+            new_index = res_mesh.add_point(np.array([point[0],point[1], -1.]))
+
+        done_edges = set()
+        edge_to_face_map = {}
+        
+        jump = len(self.vertices)
+
+        for polygon in self.polygons:
+            current_cell = []
+            current_cell_orientations = []
+            top_face = []
+            bot_face = []
+            for (edge_index, direction) in polygon:
+                print edge_index
+                if direction > 0:
+                    [p1, p2]= self.edges[edge_index]
+                else:
+                    [p2, p1]= self.edges[edge_index]
+                    
+                top_face.append(p1)
+                bot_face.append(p1+jump)
+               
+                if edge_index in done_edges:
+                    current_cell.append(edge_to_face_map[edge_index])
+                    current_cell_orientations.append(-1)
+                    
+                else:
+                    new_face = [p1, p2, p2+jump, p1+jump]
+                    new_face_index = res_mesh.add_face(new_face)
+                    current_cell.append(new_face_index)
+                    current_cell_orientations.append(1)
+                    edge_to_face_map[edge_index] = new_face_index
+                    done_edges.add(edge_index)
             
+
+            top_face_index = res_mesh.add_face(top_face)
+            bot_face_index = res_mesh.add_face(bot_face)
+            
+            current_cell.append(top_face_index)
+            current_cell_orientations.append(1)
+            current_cell.append(bot_face_index)
+            current_cell_orientations.append(1)
+            
+            res_mesh.add_cell(current_cell, current_cell_orientations)
+
+        res_mesh.output_vtk_mesh(file_name)
+        
+        
     def do_EOF(self, line):
         return True
 
@@ -260,7 +378,7 @@ class mesher(cmd.Cmd):
 
     def do_add_vertex(self, line):
         new_point = np.array(map(float, line.split()))
-        new_index = self.add_vertex(point)
+        new_index = self.add_vertex(new_point)
         print "new vertex", "[", new_index, "]", new_point
 
     def find_cc_position(self, index_v1, index_v2, edges):
