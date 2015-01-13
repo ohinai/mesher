@@ -1,6 +1,11 @@
 
 import cmd 
 import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon
+from matplotlib.collections import PatchCollection
+import matplotlib 
+import pylab 
+import matplotlib.patches as patches
 import numpy as np
 import copy 
 
@@ -33,6 +38,8 @@ class mesher(cmd.Cmd):
         self.vertices = []
         self.edges = []
         self.vert_to_edge = {}
+
+        self.bounding_box = [[0., 0.], [0., 0.]]
 
     def emptyline(self):
         pass
@@ -95,20 +102,166 @@ class mesher(cmd.Cmd):
                     mid_point = (point1+point2)/2.
                     plt.text(mid_point[0], mid_point[1], str(index))
         plt.show()        
+        
+
+    def find_orphaned_edges(self ):
+        """ Finds all edges are either not connected 
+        at all, or connected only on one side. 
+        """
+        single_sided = set()
+        no_sided = set()
+        for vertex_index in range(len(self.vertices)):
+            if self.vert_to_edge.has_key(vertex_index):
+                if len(self.vert_to_edge[vertex_index]) ==  1:
+                    edge_index = self.vert_to_edge[vertex_index][0]
+                    if edge_index in single_sided:
+                        single_sided.remove(edge_index)
+                        no_sided.add(edge_index)
+                    else:
+                        single_sided.add(edge_index)
+        return [single_sided, no_sided]
+
+    def do_find_orphans(self, line):
+        """ Finds all edges that either unconnected to 
+        anything or conntected only on a single side. 
+        """
+        [single_sided, no_sided] = self.find_orphaned_edges()
+        print "single sided edges", single_sided
+        print "no sided edges", no_sided
+        
+    def find_next_edge_cc(self, edge_index, vertex):
+        """ Finds next edge looping 
+        couter-clockwise. 
+        """
+        local_index = self.vert_to_edge[vertex].index(edge_index)
+        next_edge = self.vert_to_edge[vertex][(local_index+1)%len(self.vert_to_edge[vertex])]
+        return next_edge
+
+    def find_next_edge_c(self, edge_index, vertex):
+        """ Finds next edge looping 
+        couter-clockwise. 
+        """
+        local_index = self.vert_to_edge[vertex].index(edge_index)
+        next_edge = self.vert_to_edge[vertex][local_index-1]
+        return next_edge
+        
 
     def do_polygons(self, line):
-        """ Compute all polgons in the graph
+        """ Compute all polgons in the graph.
         """
-        pass
-            
+        done_edges = set()
+        polygons = []
+        paths = []
+        for edge_index in range(len(self.edges)):
+            if edge_index in done_edges:
+                pass
+            else:
+                print edge_index
+                done_edges.add(edge_index)
+                current_polygon = [edge_index]
+                [current_v1, current_v2] = self.edges[edge_index]
+                original_v1 = current_v1
+                current_path = [self.vertices[current_v1], self.vertices[current_v2]]
+                
+                ## Loop counter-clockwise
+                next_edge = self.find_next_edge_cc(edge_index, current_v2)
+                done_edges.add(next_edge)
+                current_polygon.append(next_edge)
+                [next_v1, next_v2] = self.edges[next_edge]
+                if next_v1 == current_v2:
+                    next_vertex = next_v2
+                elif next_v2 == current_v2:
+                    next_vertex = next_v1
+                else:
+                    raise Exception("Problem traversing graph")
+                while next_vertex != original_v1:
+                    #current_v1 = next_v1
+                    #current_v2 = next_v2
+                    current_path.append(self.vertices[next_vertex])
+                    next_edge = self.find_next_edge_cc(next_edge, next_vertex)
+                    done_edges.add(next_edge)
+                    current_polygon.append(next_edge)
+                    [next_v1, next_v2] = self.edges[next_edge]
+                    if next_v1 == next_vertex:
+                        next_vertex = next_v2
+                    elif next_v2 == next_vertex:
+                        next_vertex = next_v1
+                    else:
+                        raise Exception("Problem traversing graph")
 
+                polygons.append(current_polygon)
+                paths.append(current_path)
+
+                current_polygon = [edge_index]
+                [current_v1, current_v2] = self.edges[edge_index]
+                original_v1 = current_v1
+                current_path = [self.vertices[current_v1], self.vertices[current_v2]]
+                ## Loop clockwise
+                next_edge = self.find_next_edge_c(edge_index, current_v2)
+                done_edges.add(next_edge)
+                current_polygon.append(next_edge)
+                [next_v1, next_v2] = self.edges[next_edge]
+                if next_v1 == current_v2:
+                    next_vertex = next_v2
+                elif next_v2 == current_v2:
+                    next_vertex = next_v1
+                else:
+                    raise Exception("Problem traversing graph")
+                while next_vertex != original_v1:
+                    #current_v1 = next_v1
+                    #current_v2 = next_v2
+                    current_path.append(self.vertices[next_vertex])
+                    next_edge = self.find_next_edge_c(next_edge, next_vertex)
+                    done_edges.add(next_edge)
+                    current_polygon.append(next_edge)
+                    [next_v1, next_v2] = self.edges[next_edge]
+                    if next_v1 == next_vertex:
+                        next_vertex = next_v2
+                    elif next_v2 == next_vertex:
+                        next_vertex = next_v1
+                    else:
+                        raise Exception("Problem traversing graph")
+
+
+
+
+                polygons.append(current_polygon)
+                paths.append(current_path)
+            
+        fig=pylab.figure()
+        ax=fig.add_subplot(111)
+        paths = paths[1:]
+        patches = map(lambda x:Polygon(x, True), map(lambda x:np.array(x), paths))
+        p = PatchCollection(patches,cmap=matplotlib.cm.jet,  alpha=1.0)
+
+        p.set_array(np.random.rand(len(paths)))
+        ax.add_collection(p)
+        p.set_clim([0., 1.])
+
+        ax.autoscale_view(True, True, True)
+
+        pylab.show()
+            
     def do_EOF(self, line):
         return True
 
+    def add_vertex(self, point):
+        """ Adds new vertex, returns 
+        vertex index. 
+        """
+        self.vertices.append(point)
+        self.bounding_box[0][0] = min(self.bounding_box[0][0], point[0])
+        self.bounding_box[1][0] = max(self.bounding_box[0][0], point[0])
+
+        self.bounding_box[0][1] = min(self.bounding_box[0][1], point[1])
+        self.bounding_box[1][1] = max(self.bounding_box[0][1], point[1])
+
+        return len(self.vertices)-1
+
     def do_add_vertex(self, line):
         new_point = np.array(map(float, line.split()))
-        self.vertices.append(new_point)
-        print "new vertex", "[", len(self.vertices)-1, "]", new_point
+        new_index = self.add_vertex(point)
+        print "new vertex", "[", new_index, "]", new_point
 
     def find_cc_position(self, index_v1, index_v2, edges):
         """ Given edge p1->p2, find position so that 
@@ -257,8 +410,7 @@ class mesher(cmd.Cmd):
                         elif  abs(param[1]-1.) < self.threshold:
                             segments.append([param[0], current_edge[1]])
                         else:
-                            self.vertices.append(intersection)
-                            new_point = len(self.vertices)-1
+                            new_point = self.add_vertex(intersection)
                             edge_mod.append([current_index, new_point])
                             segments.append([param[0], new_point])
 
@@ -282,14 +434,24 @@ class mesher(cmd.Cmd):
             done_edges.add(new_edge_index)
         return done_edges
 
+    def update_edge_numbering(self, edge_index):
+        """ After removing an edge, updates 
+        the edge numbering everywhere that is needed. 
+        """
+        for vertex_index in self.vert_to_edge:
+            for (index,  current_edge_index) in enumerate(self.vert_to_edge[vertex_index]):
+                if current_edge_index > edge_index:
+                    self.vert_to_edge[vertex_index][index] -= 1
+
     def do_remove_edge(self, line):
         """ Removes edge from graph. 
         """
         index = int(line.split()[0])
-        [v1, v2] = self.edges(index)
-        self.vert_to_edge[v1].pop(index)
-        self.vert_to_edge[v2].pop(index)
+        [v1, v2] = self.edges[index]
+        self.vert_to_edge[v1].remove(index)
+        self.vert_to_edge[v2].remove(index)
         self.edges.pop(index)
+        self.update_edge_numbering(index)
         
     def do_intersect_all(self, line):
         """ Intersect all edges. 
@@ -340,8 +502,7 @@ class mesher(cmd.Cmd):
         for i in range(nx+1):
             for j in range(ny+1):
                 new_point = np.array([i*dx, j*dy])
-                self.vertices.append(new_point)
-                new_point_index = len(self.vertices)-1
+                new_point_index = self.add_vertex(new_point)
                 ij_to_point[(i, j)] = new_point_index
 
         for i in range(nx+1):
