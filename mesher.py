@@ -9,6 +9,8 @@ import matplotlib.patches as patches
 import numpy as np
 import copy 
 
+import pickle 
+
 
 import sys 
 
@@ -49,7 +51,10 @@ class mesher(cmd.Cmd):
         self.bounding_box = [[0., 0.], [0., 0.]]
 
         self.polygons = None
+        self.boundaries = None
 
+        self.fracture_edges = []
+        
     def emptyline(self):
         pass
 
@@ -169,7 +174,6 @@ class mesher(cmd.Cmd):
 
         for edge_index in range(len(self.edges)):
             if (edge_index, 1) not in done_edges:
-                print edge_index
                 direction_sum = 0.
                 current_polygon = [edge_index]
                 [current_v1, current_v2] = self.edges[edge_index]
@@ -221,7 +225,7 @@ class mesher(cmd.Cmd):
                         raise Exception("Problem traversing graph")
 
                 if direction_sum < 0:
-                    boundaries.append(current_polygon)
+                    boundaries += current_polygon
                 else:
                     polygons.append(current_polygon)
                     paths.append(current_path)
@@ -277,7 +281,7 @@ class mesher(cmd.Cmd):
                         raise Exception("Problem traversing graph")
 
                 if direction_sum > 0:
-                    boundaries.append(current_polygon)
+                    boundaries += current_polygon
                 else:
                     polygons.append(current_polygon)
                     paths.append(current_path)
@@ -285,6 +289,7 @@ class mesher(cmd.Cmd):
                     index_paths.append(current_index_path)
                     
         self.polygons = index_paths
+        self.boundaries = boundaries
 
         fig=pylab.figure()
         ax=fig.add_subplot(111)
@@ -300,6 +305,12 @@ class mesher(cmd.Cmd):
 
         pylab.show()
     
+    def do_set_fracture(self, line):
+        """ Sets edge as fracture edge. 
+        """
+        edge_index = int(line.split()[0])
+        self.fracture_edges.append(edge_index)
+        
     def do_mimpy_mesh(self, line):
         """ Produces a mimpy mesh from the 
         graph and stores in the filename specified.  
@@ -307,6 +318,7 @@ class mesher(cmd.Cmd):
         res_mesh = mesh.Mesh()
         
         file_name = line
+        res_mesh.dim = 3
 
         for point in self.vertices:
             res_mesh.add_point(np.array([point[0], point[1], 0.]))
@@ -319,13 +331,17 @@ class mesher(cmd.Cmd):
         
         jump = len(self.vertices)
 
+        res_mesh.add_boundary_marker(0, "bottom surface")
+        res_mesh.add_boundary_marker(1, "top surface")
+        
+        res_mesh.add_boundary_marker(2, "perimeter")
+        
         for polygon in self.polygons:
             current_cell = []
             current_cell_orientations = []
             top_face = []
             bot_face = []
             for (edge_index, direction) in polygon:
-                print edge_index
                 if direction > 0:
                     [p1, p2]= self.edges[edge_index]
                 else:
@@ -341,25 +357,78 @@ class mesher(cmd.Cmd):
                 else:
                     new_face = [p1, p2, p2+jump, p1+jump]
                     new_face_index = res_mesh.add_face(new_face)
+
+                    normal = res_mesh.find_face_normal(new_face_index)
+                    res_mesh.set_face_normal(new_face_index, normal)
+                    (area, centroid) = res_mesh.find_face_centroid(new_face_index)
+                    res_mesh.set_face_area(new_face_index, area)
+                    res_mesh.set_face_real_centroid(new_face_index, centroid)
+
                     current_cell.append(new_face_index)
                     current_cell_orientations.append(1)
                     edge_to_face_map[edge_index] = new_face_index
                     done_edges.add(edge_index)
-            
 
             top_face_index = res_mesh.add_face(top_face)
+
+            normal = res_mesh.find_face_normal(top_face_index)
+            res_mesh.set_face_normal(top_face_index, normal)
+            (area, centroid) = res_mesh.find_face_centroid(top_face_index)
+            res_mesh.set_face_area(top_face_index, area)
+            res_mesh.set_face_real_centroid(top_face_index, centroid)
+
+            res_mesh.set_face_quadrature_points(top_face_index, 
+                                                [centroid])
+            res_mesh.set_face_quadrature_weights(top_face_index, 
+                                                 [area])
+
             bot_face_index = res_mesh.add_face(bot_face)
             
+            normal = res_mesh.find_face_normal(bot_face_index)
+            res_mesh.set_face_normal(bot_face_index, normal)
+            (area, centroid) = res_mesh.find_face_centroid(bot_face_index)
+            res_mesh.set_face_area(bot_face_index, area)
+            res_mesh.set_face_real_centroid(bot_face_index, centroid)
+
+            res_mesh.set_face_quadrature_points(bot_face_index, 
+                                                [centroid])
+            res_mesh.set_face_quadrature_weights(bot_face_index, 
+                                                 [area])
+
+            res_mesh.add_boundary_face(0,  bot_face_index, -1)
+            res_mesh.add_boundary_face(1,  top_face_index, 1)
+
             current_cell.append(top_face_index)
             current_cell_orientations.append(1)
             current_cell.append(bot_face_index)
-            current_cell_orientations.append(1)
+            current_cell_orientations.append(-1)
             
-            res_mesh.add_cell(current_cell, current_cell_orientations)
+            new_cell_index = res_mesh.add_cell(current_cell, current_cell_orientations)
+            
+            res_mesh.set_cell_k(new_cell_index, 1.e-4*np.eye(3))
+            
+            (volume, centroid) = res_mesh.find_volume_centroid(new_cell_index)
+            res_mesh.set_cell_real_centroid(new_cell_index, centroid)
+            res_mesh.set_cell_volume(new_cell_index, volume)
+            
 
-        res_mesh.output_vtk_mesh(file_name)
-        
-        
+        for edge_index in self.boundaries:
+            face_index = edge_to_face_map[edge_index]
+            res_mesh.add_boundary_face(2, face_index, 1)
+            res_mesh.set_face_quadrature_points(face_index, 
+                                                [res_mesh.get_face_real_centroid(face_index)])
+            res_mesh.set_face_quadrature_weights(face_index, 
+                                                 [res_mesh.get_face_area(face_index)])
+            
+
+        res_mesh.build_frac_from_faces([edge_to_face_map[edge_index] for edge_index in self.fracture_edges])
+            
+        res_mesh.output_vtk_mesh(file_name, [res_mesh.get_cell_domain_all(), 
+                                             [k[0, 0] for k in res_mesh.get_all_k()]], ["DOMAIN", "K"])
+        pickle_file = open(file_name, 'w')
+        pickle.dump(res_mesh, pickle_file)
+        pickle_file.close()
+
     def do_EOF(self, line):
         return True
 
