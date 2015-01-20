@@ -14,8 +14,6 @@ import pickle
 
 import sys 
 
-sys.path.append("/h2/ohinai/sch.ps/research/repos/mimpy-frac/")
-
 from mimpy.mesh import mesh
 
 plt.ion()
