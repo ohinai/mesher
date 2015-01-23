@@ -39,11 +39,12 @@ class mesher(cmd.Cmd):
 
     show_edge_numbering = True 
     show_vertex_numbering = True
-    threshold = 1.e-5
+
 
     def __init__(self): 
         cmd.Cmd.__init__(self)
 
+        self.threshold = 1.e-5
         self.vertices = []
         self.edges = []
         self.vert_to_edge = {}
@@ -54,10 +55,24 @@ class mesher(cmd.Cmd):
         self.boundaries = None
 
         self.fracture_edges = []
+
+        self.session = []
         
     def emptyline(self):
         pass
 
+    def precmd(self, line):
+        self.session.append(line)
+        return line
+
+    def do_save_session(self, line):
+        """ Save session in file. 
+        """
+        output_file = open(line,  'w')
+        for line in self.session:
+            print>>output_file, line
+        output_file.close()
+        
     def do_toggle(self, line):
         """ Toggles what is shown in the graph.  
         """
@@ -107,6 +122,14 @@ class mesher(cmd.Cmd):
                     plt.text(point[0], point[1], str(index))
 
         if self.show_edges:
+            for edge_index in self.fracture_edges:
+                edge = self.edges[edge_index]
+                point1 = self.vertices[edge[0]]
+                point2 = self.vertices[edge[1]]
+                plt.plot([point1[0], point2[0]], 
+                         [point1[1], point2[1]], 'k-', color = 'r', linewidth = 7.)
+                
+
             for (index, edge) in enumerate(self.edges):
                 point1 = self.vertices[edge[0]]
                 point2 = self.vertices[edge[1]]
@@ -399,17 +422,20 @@ class mesher(cmd.Cmd):
             res_mesh.add_boundary_face(1,  top_face_index, 1)
 
             current_cell.append(top_face_index)
-            current_cell_orientations.append(1)
-            current_cell.append(bot_face_index)
             current_cell_orientations.append(-1)
+            current_cell.append(bot_face_index)
+            current_cell_orientations.append(1)
             
             new_cell_index = res_mesh.add_cell(current_cell, current_cell_orientations)
             
-            res_mesh.set_cell_k(new_cell_index, 1.e-4*np.eye(3))
+            res_mesh.set_cell_k(new_cell_index, np.eye(3))
             
             (volume, centroid) = res_mesh.find_volume_centroid(new_cell_index)
             res_mesh.set_cell_real_centroid(new_cell_index, centroid)
             res_mesh.set_cell_volume(new_cell_index, volume)
+
+            res_mesh.set_cell_quadrature_points(new_cell_index, [centroid])
+            res_mesh.set_cell_quadrature_weights(new_cell_index, [volume])
             
 
         for edge_index in self.boundaries:
@@ -431,6 +457,16 @@ class mesher(cmd.Cmd):
 
     def do_EOF(self, line):
         return True
+
+    def do_move_vertex(self, line):
+        """ Move vertex to new location. 
+        """
+        line_split = line.split()
+        index  = int(line_split[0])
+        x = float(line_split[1])
+        y = float(line_split[2])
+        
+        self.vertices[index] = np.array([x, y])
 
     def add_vertex(self, point):
         """ Adds new vertex, returns 
@@ -542,6 +578,14 @@ class mesher(cmd.Cmd):
         else:
             self.vert_to_edge[v2] = [edge_index]
             
+    def do_svtov(self, line):
+        """ Snaps edge index to second indedx location. 
+        """
+        split_line = line.split()
+        v1_index = int(split_line[0])
+        v2_index = int(split_line[1])
+        
+        self.vertices[v1_index] = np.array(self.vertices[v2_index])
 
     def set_edge(self, edge_index, v1, v2):
         """ Modifies vertices of existing 
@@ -604,8 +648,10 @@ class mesher(cmd.Cmd):
         for current_mod in edge_mod:
             current_index = current_mod[0]
             point_index = current_mod[1]
-            self.add_edge(self.edges[current_index][1], point_index)
+            new_edge = self.add_edge(self.edges[current_index][1], point_index)
             self.set_edge(current_index, self.edges[current_index][0], point_index )
+            if current_index in self.fracture_edges:
+                self.fracture_edges.append(new_edge)
             
         segments.sort()
 
@@ -613,12 +659,18 @@ class mesher(cmd.Cmd):
         self.set_edge(edge_index, self.edges[edge_index][0], segments[0][1])
         done_edges = set()
         done_edges.add(edge_index)
+        if edge_index in self.fracture_edges:
+            add_to_frac = True
+        else:
+            add_to_frac = False
 
         for seg_index in range(len(segments)-1):
             v1 = segments[seg_index][1]
             v2 = segments[seg_index+1][1]
             new_edge_index = self.add_edge(v1, v2)
             done_edges.add(new_edge_index)
+            if add_to_frac:
+                self.fracture_edges.append(new_edge_index)
         return done_edges
 
     def update_edge_numbering(self, edge_index):
@@ -630,6 +682,10 @@ class mesher(cmd.Cmd):
                 if current_edge_index > edge_index:
                     self.vert_to_edge[vertex_index][index] -= 1
 
+        for (index, frac_index) in enumerate(self.fracture_edges):
+            if frac_index > edge_index:
+                self.fracture_edges[index] -= 1
+
     def do_remove_edge(self, line):
         """ Removes edge from graph. 
         """
@@ -639,11 +695,12 @@ class mesher(cmd.Cmd):
         self.vert_to_edge[v2].remove(index)
         self.edges.pop(index)
         self.update_edge_numbering(index)
+        if index in self.fracture_edges:
+            self.fracture_edges.remove(index)
         
     def do_intersect_all(self, line):
         """ Intersect all edges. 
         """
-
         current_index = 0
         done_edges = set() 
         while current_index < len(self.edges):
@@ -652,8 +709,14 @@ class mesher(cmd.Cmd):
                 done_edges.union(self.intersect_edge(current_index))
 
             current_index += 1
-        
-        
+
+    def do_intersect_fractures(self, line):
+        """ Intersect allf fractures. 
+        """
+        for edge_index in self.fracture_edges:
+            self.intersect_edge(edge_index)
+
+    
     def do_intersect_edge(self, line):
         """ For a given edge number, intersect it 
         with all other edges in the graph. 
@@ -670,6 +733,80 @@ class mesher(cmd.Cmd):
 
     def do_build_mesh(self, line):
         """ Builds rectangular mesh. Input:
+        xstart xend, ystart, yend 
+        [number of cells in x]
+        [number of cells in y]
+        """
+        split_line = line.split()
+        
+        x_start = float(split_line[0])
+        x_end = float(split_line[1])
+        y_start = float(split_line[2])
+        y_end = float(split_line[3])
+        
+        nx = int(split_line[4])
+        ny = int(split_line[5])
+
+        mesh_boundary = True
+        if len(split_line)> 6:
+            if split_line[6] == "noboundary":
+                mesh_boundary = False
+
+        ij_to_point = {}
+
+        dx = (x_end-x_start)/nx
+        dy = (y_end-y_start)/ny
+
+        if mesh_boundary:
+            for i in range(nx+1):
+                for j in range(ny+1):
+                    new_point = np.array([i*dx+x_start, j*dy+y_start])
+                    new_point_index = self.add_vertex(new_point)
+                    ij_to_point[(i, j)] = new_point_index
+
+        else:
+            for i in range(nx+1):
+                for j in range(ny+1):
+                    if i == 0 and j == 0:
+                        pass
+                    elif i == 0 and j == ny:
+                        pass
+                    elif i == nx and j == 0:
+                        pass
+                    elif i == nx and j == ny:
+                        pass
+                    else:
+                        new_point = np.array([i*dx+x_start, j*dy+y_start])
+                        new_point_index = self.add_vertex(new_point)
+                        ij_to_point[(i, j)] = new_point_index
+        
+
+        if mesh_boundary:
+            for i in range(nx+1):
+                for j in range(ny+1):
+                    if i < nx:
+                        self.add_edge(ij_to_point[(i, j)], 
+                                      ij_to_point[(i+1, j)])
+
+                    if j < ny:
+                        self.add_edge(ij_to_point[(i, j)], 
+                                      ij_to_point[(i, j+1)])
+
+        else:
+            for i in range(nx+1):
+                for j in range(ny+1):
+                    if i < nx and 0 <j <ny:
+                        self.add_edge(ij_to_point[(i, j)], 
+                                      ij_to_point[(i+1, j)])
+
+                    if j < ny and 0<i <nx:
+                        self.add_edge(ij_to_point[(i, j)], 
+                                      ij_to_point[(i, j+1)])
+
+
+    def do_build_bdm_mesh(self, line):
+        """ Builds rectangular mesh with two degrees of freedom 
+        per face. Input:
         [x dimension]
         [y dimension]
         [number of cells in x]
@@ -682,6 +819,8 @@ class mesher(cmd.Cmd):
         nx = int(split_line[2])
         ny = int(split_line[3])
         ij_to_point = {}
+        i_mid_j_to_point = {}
+        ij_mid_to_point = {}
 
         dx = x_dim/nx
         dy = y_dim/ny
@@ -691,16 +830,36 @@ class mesher(cmd.Cmd):
                 new_point = np.array([i*dx, j*dy])
                 new_point_index = self.add_vertex(new_point)
                 ij_to_point[(i, j)] = new_point_index
+                
+                if i < nx:
+                    new_point = np.array([i*dx+.5*dx, j*dy])
+                    new_point_index = self.add_vertex(new_point)
+                
+                    i_mid_j_to_point[(i, j)] = new_point_index
+                    
+                if j < ny:
+
+                    new_point = np.array([i*dx, j*dy+.5*dy])
+                    new_point_index = self.add_vertex(new_point)
+                
+
+                    ij_mid_to_point[(i, j)] = new_point_index
 
         for i in range(nx+1):
             for j in range(ny+1):
                 
                 if i < nx:
                     self.add_edge(ij_to_point[(i, j)], 
+                                  i_mid_j_to_point[(i, j)])
+
+                    self.add_edge(i_mid_j_to_point[(i, j)], 
                                   ij_to_point[(i+1, j)])
                 
                 if j < ny:
                     self.add_edge(ij_to_point[(i, j)], 
+                                  ij_mid_to_point[(i, j)])
+
+                    self.add_edge(ij_mid_to_point[(i, j)], 
                                   ij_to_point[(i, j+1)])
                     
         
