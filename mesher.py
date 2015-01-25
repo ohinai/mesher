@@ -14,7 +14,7 @@ import pickle
 
 import sys 
 
-sys.path.append("/h2/ohinai/sch.ps/research/repos/mimpy-frac/")
+sys.path.append("../mimpy-frac/")
 
 from mimpy.mesh import mesh
 
@@ -63,6 +63,8 @@ class mesher(cmd.Cmd):
 
     def precmd(self, line):
         self.session.append(line)
+        if len(line)>0 and line[0] == "#":
+            return ""
         return line
 
     def do_save_session(self, line):
@@ -654,6 +656,14 @@ class mesher(cmd.Cmd):
                 self.fracture_edges.append(new_edge)
             
         segments.sort()
+        
+        new_segments = [segments[0]]
+        for seg_index in range(1, len(segments)):
+            if abs(segments[seg_index][0]-new_segments[-1][0])<self.threshold:
+                pass
+            else:
+                new_segments.append(segments[seg_index])
+        segments = new_segments
 
         segments.append([1. , self.edges[edge_index][1]])
         self.set_edge(edge_index, self.edges[edge_index][0], segments[0][1])
@@ -690,6 +700,8 @@ class mesher(cmd.Cmd):
         """ Removes edge from graph. 
         """
         index = int(line.split()[0])
+        if index < 0 :
+            index = len(self.edges)+index
         [v1, v2] = self.edges[index]
         self.vert_to_edge[v1].remove(index)
         self.vert_to_edge[v2].remove(index)
@@ -723,12 +735,14 @@ class mesher(cmd.Cmd):
         """
         line_split = line.split()
         edge_index = int(line_split[0])
+        if edge_index < 0 :
+            edge_index = len(self.edges)+edge_index
         self.intersect_edge(edge_index)
 
     def do_load_commands(self, line):
         file = open(line)
         for line in file:
-            if len(line.split())>0:
+            if len(line.split())>0 and line[0]!="#":
                 self.onecmd(line)
 
     def do_build_mesh(self, line):
@@ -761,7 +775,12 @@ class mesher(cmd.Cmd):
             for i in range(nx+1):
                 for j in range(ny+1):
                     new_point = np.array([i*dx+x_start, j*dy+y_start])
-                    new_point_index = self.add_vertex(new_point)
+                    new_point_index = None
+                    for index in range(len(self.vertices)):
+                        if np.linalg.norm(new_point - self.vertices[index])<self.threshold:
+                            new_point_index = index
+                    if new_point_index == None:
+                        new_point_index = self.add_vertex(new_point)
                     ij_to_point[(i, j)] = new_point_index
 
         else:
@@ -777,7 +796,12 @@ class mesher(cmd.Cmd):
                         pass
                     else:
                         new_point = np.array([i*dx+x_start, j*dy+y_start])
-                        new_point_index = self.add_vertex(new_point)
+                        new_point_index = None
+                        for index in range(len(self.vertices)):
+                            if np.linalg.norm(new_point - self.vertices[index])<self.threshold:
+                                new_point_index = index
+                        if new_point_index == None:        
+                            new_point_index = self.add_vertex(new_point)                                           
                         ij_to_point[(i, j)] = new_point_index
         
 
