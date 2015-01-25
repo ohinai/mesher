@@ -99,7 +99,11 @@ class mesher(cmd.Cmd):
     def do_polygons(self, line):
         """ Compute all polgons in the graph
         """
-        pass
+        done_edges = set()
+        
+        for (edge_index, edge) in enumerate(self.edges):
+            [v1, v2] = edge
+            
             
 
     def do_EOF(self, line):
