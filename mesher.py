@@ -11,10 +11,8 @@ import copy
 
 import pickle 
 
-
 import sys 
 
-sys.path.append("../mimpy-frac/")
 
 from mimpy.mesh import mesh
 
@@ -58,6 +56,9 @@ class mesher(cmd.Cmd):
 
         self.session = []
         
+        self.highlight_edges = None
+
+        
     def emptyline(self):
         pass
 
@@ -66,6 +67,91 @@ class mesher(cmd.Cmd):
         if len(line)>0 and line[0] == "#":
             return ""
         return line
+
+    def ee_intersection(self, edge_1, edge_2):
+        """ Finds intersection of two edges. 
+        Returns interesction point and tuple 
+        representing the parametric value 
+        of point on teach line. 
+        """
+        v1 = self.vertices[self.edges[edge_1][0]]
+        v2 = self.vertices[self.edges[edge_1][1]]
+
+        v3 = self.vertices[self.edges[edge_2][0]]
+        v4 = self.vertices[self.edges[edge_2][1]]
+
+        return line_line_intersection(v1, v2, v3, v4)
+
+    def do_save_mesh(self, line):
+        """ Saves current mesh in file. 
+        """
+
+        file_name = line.split()[0]
+        
+        output_file = open(file_name, 'w')
+        print >>output_file, "VERTICES", len(self.vertices)
+        for vertex in self.vertices:
+            print >>output_file, vertex[0], vertex[1]
+
+        print >>output_file, "EDGES", len(self.edges)
+        for edge in self.edges:
+            print >>output_file, edge[0], edge[1]
+
+        print >>output_file, "VTOE", len(self.vert_to_edge)
+        for key in self.vert_to_edge:
+            print >>output_file, key, " ".join(map(str, self.vert_to_edge[key]))
+        
+        print >>output_file, "FRACTURE", len(self.fracture_edges)
+        for edge in self.fracture_edges:
+            print >>output_file, edge
+        
+    def do_load_mesh(self, line):
+        """ Loads mesh from file. 
+        """
+        file_name = line.split()[0]
+        
+        output_file = open(file_name)
+        
+        current_line = output_file.readline()
+        line_split = current_line.split()
+        n_vertices = int(line_split[1])
+        for v_index in range(n_vertices):
+            current_line = output_file.readline()
+            line_split = current_line.split()
+            current_point = np.array(map(float, line_split))
+            self.vertices.append(current_point)            
+
+        current_line = output_file.readline()
+        line_split = current_line.split()
+        n_edges = int(line_split[1])
+        
+        for e_index in range(n_edges):
+            current_line = output_file.readline()
+            line_split = current_line.split()
+            current_edge = np.array(map(int, line_split))
+            self.edges.append(current_edge)
+
+        current_line = output_file.readline()
+        line_split = current_line.split()
+        n_vtoe = int(line_split[1])
+        
+        for index in range(n_vtoe):
+            current_line = output_file.readline()
+            line_split = current_line.split()
+
+            self.vert_to_edge[int(line_split[0])] = map(int, line_split[1:])
+            
+ 
+        current_line = output_file.readline()
+        line_split = current_line.split()
+        n_fractures = int(line_split[1])
+        
+        for index in range(n_fractures):
+            current_line = output_file.readline()
+            line_split = current_line.split()
+            
+            self.fracture_edges.append(int(line_split[0]))
+            
 
     def do_save_session(self, line):
         """ Save session in file. 
@@ -104,6 +190,13 @@ class mesher(cmd.Cmd):
                     plt.text(point[0], point[1], str(index))
 
         if self.show_edges:
+            for edge_index in self.fracture_edges:
+                edge = self.edges[edge_index]
+                point1 = self.vertices[edge[0]]
+                point2 = self.vertices[edge[1]]
+                plt.plot([point1[0], point2[0]], 
+                         [point1[1], point2[1]], 'k-', color = 'r', linewidth = 7.)
+
             for (index, edge) in enumerate(self.edges):
                 point1 = self.vertices[edge[0]]
                 point2 = self.vertices[edge[1]]
@@ -112,6 +205,15 @@ class mesher(cmd.Cmd):
                 if self.show_edge_numbering:
                     mid_point = (point1+point2)/2.
                     plt.text(mid_point[0], mid_point[1], str(index))
+
+
+            if self.highlight_edges != None:
+                edge = self.edges[self.highlight_edges]
+                point1 = self.vertices[edge[0]]
+                point2 = self.vertices[edge[1]]
+                plt.plot([point1[0], point2[0]], 
+                         [point1[1], point2[1]], 'k-', color = 'y', linewidth = 8.)
+
         plt.axis(temp_axis)
         plt.show()        
             
@@ -140,10 +242,60 @@ class mesher(cmd.Cmd):
                 if self.show_edge_numbering:
                     mid_point = (point1+point2)/2.
                     plt.text(mid_point[0], mid_point[1], str(index))
+
+            if self.highlight_edges != None:
+                edge = self.edges[self.highlight_edges]
+                point1 = self.vertices[edge[0]]
+                point2 = self.vertices[edge[1]]
+                plt.plot([point1[0], point2[0]], 
+                         [point1[1], point2[1]], 'k-', color = 'y', linewidth = 8.)
         plt.show()        
         
+    def do_remove_leaves(self, line):
+        """ Remove all leaf edges. 
+        """
+        (single_sided, no_sided) = self.find_leaf_edges()
+        to_be_removed = list(single_sided) + list(no_sided)
+        to_be_removed.sort()
+        to_be_removed.reverse()
+        for edge_index in to_be_removed:
+            self.remove_edge(edge_index)
 
-    def find_orphaned_edges(self ):
+    def do_mo_evtoe(self, line):
+        """ Shifts vertex edge to by on existing edge. 
+        """
+        line_split = line.split()
+        edge_index = int(line_split[0])
+        vertex_index = int(line_split[1])
+
+        target_edge = int(line_split[2])
+        
+        original = self.vertices[vertex_index]
+        (point, ts) = self.ee_intersection(edge_index, target_edge)
+        
+        self.vertices[vertex_index] = point
+        print "vertex", vertex_index, "shifted:", original, "->", point
+
+    def do_ex_evtoe(self, line):
+        """ Extends edge to another edge by 
+        finding the inersection on the second edge 
+        and adding a new edge between. 
+        """
+        line_split = line.split()
+        edge_index = int(line_split[0])
+        vertex_index = int(line_split[1])
+
+        target_edge = int(line_split[2])
+        
+        (point, ts) = self.ee_intersection(edge_index, target_edge)
+        
+        new_vertex=self.add_vertex(point)
+        new_edge = self.add_edge(vertex_index, new_vertex)
+        print "new vertex", "[", new_vertex, "]", point 
+        print "new edge", "[", new_edge, "]",  vertex_index, "<->", new_vertex
+
+
+    def find_leaf_edges(self ):
         """ Finds all edges are either not connected 
         at all, or connected only on one side. 
         """
@@ -160,11 +312,11 @@ class mesher(cmd.Cmd):
                         single_sided.add(edge_index)
         return [single_sided, no_sided]
 
-    def do_find_orphans(self, line):
+    def do_find_leaves(self, line):
         """ Finds all edges that either unconnected to 
         anything or conntected only on a single side. 
         """
-        [single_sided, no_sided] = self.find_orphaned_edges()
+        [single_sided, no_sided] = self.find_leaf_edges()
         print "single sided edges", single_sided
         print "no sided edges", no_sided
         
@@ -197,6 +349,78 @@ class mesher(cmd.Cmd):
             point2 = self.vertices[v2]
             return (point2[0]-point1[0])*(point2[1]+point1[1])
 
+
+        counter_c_edges = range(len(self.edges))
+        c_edges = range(len(self.edges))
+        
+        
+        while len(counter_c_edges) > 0:
+            edge_index = counter_c_edges.pop(0)
+            direction_sum = 0.
+            current_polygon = [edge_index]
+            [current_v1, current_v2] = self.edges[edge_index]
+            original_v1 = current_v1
+            current_path = [self.vertices[current_v1], self.vertices[current_v2]]
+            current_index_path = [[edge_index, 1]]
+            direction_sum += direction_int(current_v1, current_v2)
+            ## Loop counter-clockwise
+            next_edge = self.find_next_edge_cc(edge_index, current_v2)
+
+            current_polygon.append(next_edge)
+            [next_v1, next_v2] = self.edges[next_edge]
+
+            if next_v1 == current_v2:
+                next_vertex = next_v2
+                direction_sum += direction_int(next_v1, next_v2)
+                print counter_c_edges, next_edge
+                counter_c_edges.remove(next_edge)
+                #done_edges.add((next_edge, 1))
+                current_index_path.append([next_edge, 1])
+
+            elif next_v2 == current_v2:
+                next_vertex = next_v1
+                direction_sum += direction_int(next_v2, next_v1)
+                c_edges.remove(next_edge)
+                #done_edges.add((next_edge, -1))
+                current_index_path.append([next_edge, -1])
+
+            else:
+                raise Exception("Problem traversing graph")
+            while next_vertex != original_v1:
+                current_path.append(self.vertices[next_vertex])
+
+                next_edge = self.find_next_edge_cc(next_edge, next_vertex)
+
+                current_polygon.append(next_edge)
+                [next_v1, next_v2] = self.edges[next_edge]
+
+                if next_v1 == next_vertex:
+                    next_vertex = next_v2
+                    direction_sum += direction_int(next_v1, next_v2)
+                    counter_c_edges.remove(next_edge)
+                    #done_edges.add((next_edge, 1))
+                    current_index_path.append([next_edge, 1])
+
+                elif next_v2 == next_vertex:
+                    next_vertex = next_v1
+                    direction_sum += direction_int(next_v2, next_v1)
+                    c_edges.remove(next_edge)
+                    #done_edges.add((next_edge, -1))
+                    current_index_path.append([next_edge, -1])
+
+                else:
+                    raise Exception("Problem traversing graph")
+
+            if direction_sum < 0:
+                boundaries += current_polygon
+            else:
+                polygons.append(current_polygon)
+                paths.append(current_path)
+                index_paths.append(current_index_path)
+        return 
+
+            
+            
         for edge_index in range(len(self.edges)):
             if (edge_index, 1) not in done_edges:
                 direction_sum = 0.
@@ -316,6 +540,7 @@ class mesher(cmd.Cmd):
         self.polygons = index_paths
         self.boundaries = boundaries
 
+        return 
         fig=pylab.figure()
         ax=fig.add_subplot(111)
         patches = map(lambda x:Polygon(x, True), map(lambda x:np.array(x), paths))
@@ -334,6 +559,8 @@ class mesher(cmd.Cmd):
         """ Sets edge as fracture edge. 
         """
         edge_index = int(line.split()[0])
+        if edge_index < 0:
+            edge_index = edge_index + len(self.edges)
         self.fracture_edges.append(edge_index)
         
     def do_mimpy_mesh(self, line):
@@ -468,7 +695,30 @@ class mesher(cmd.Cmd):
         x = float(line_split[1])
         y = float(line_split[2])
         
+
         self.vertices[index] = np.array([x, y])
+
+
+    def do_ectov(self, line):
+        """ Returns the edges connected to 
+        vertex number. 
+        """
+        vertex_index = int(line.split()[0])
+        print self.vert_to_edge[vertex_index]
+
+    def do_vctoe(self, line):
+        """ Returns the vertices connected to 
+        edge number. 
+        """
+        edge_index = int(line.split()[0])
+        print self.edges[edge_index]
+         
+
+    def do_highlight_e(self, line):
+        """ Highlighss edge.
+        """
+        edge_index = int(line.split()[0])
+        self.highlight_edges=edge_index
 
     def add_vertex(self, point):
         """ Adds new vertex, returns 
@@ -553,6 +803,10 @@ class mesher(cmd.Cmd):
         plt.show()
         
     def add_edge(self, v1, v2):
+        if v1<0 :
+            v1 = len(self.vertices)+v1
+        if v2<0 :
+            v2 = len(self.vertices)+v2
         self.edges.append([v1, v2])
 
         self.update_v_to_e(len(self.edges)-1, v1, v2)
@@ -581,7 +835,7 @@ class mesher(cmd.Cmd):
             self.vert_to_edge[v2] = [edge_index]
             
     def do_svtov(self, line):
-        """ Snaps edge index to second indedx location. 
+        """ Snaps edge index to second index location. 
         """
         split_line = line.split()
         v1_index = int(split_line[0])
@@ -656,31 +910,33 @@ class mesher(cmd.Cmd):
                 self.fracture_edges.append(new_edge)
             
         segments.sort()
-        
-        new_segments = [segments[0]]
-        for seg_index in range(1, len(segments)):
-            if abs(segments[seg_index][0]-new_segments[-1][0])<self.threshold:
-                pass
-            else:
-                new_segments.append(segments[seg_index])
-        segments = new_segments
 
-        segments.append([1. , self.edges[edge_index][1]])
-        self.set_edge(edge_index, self.edges[edge_index][0], segments[0][1])
         done_edges = set()
         done_edges.add(edge_index)
-        if edge_index in self.fracture_edges:
-            add_to_frac = True
-        else:
-            add_to_frac = False
+        if len(segments) > 0:
+            new_segments = [segments[0]]
+            for seg_index in range(1, len(segments)):
+                if abs(segments[seg_index][0]-new_segments[-1][0])<self.threshold:
+                    pass
+                else:
+                    new_segments.append(segments[seg_index])
+            segments = new_segments
 
-        for seg_index in range(len(segments)-1):
-            v1 = segments[seg_index][1]
-            v2 = segments[seg_index+1][1]
-            new_edge_index = self.add_edge(v1, v2)
-            done_edges.add(new_edge_index)
-            if add_to_frac:
-                self.fracture_edges.append(new_edge_index)
+            segments.append([1. , self.edges[edge_index][1]])
+            self.set_edge(edge_index, self.edges[edge_index][0], segments[0][1])
+
+            if edge_index in self.fracture_edges:
+                add_to_frac = True
+            else:
+                add_to_frac = False
+
+            for seg_index in range(len(segments)-1):
+                v1 = segments[seg_index][1]
+                v2 = segments[seg_index+1][1]
+                new_edge_index = self.add_edge(v1, v2)
+                done_edges.add(new_edge_index)
+                if add_to_frac:
+                    self.fracture_edges.append(new_edge_index)
         return done_edges
 
     def update_edge_numbering(self, edge_index):
@@ -695,21 +951,28 @@ class mesher(cmd.Cmd):
         for (index, frac_index) in enumerate(self.fracture_edges):
             if frac_index > edge_index:
                 self.fracture_edges[index] -= 1
+    
+    def remove_edge(self, edge_index):
+        """ Removes edge from graph. 
+        """
+        [v1, v2] = self.edges[edge_index]
+        self.vert_to_edge[v1].remove(edge_index)
+        self.vert_to_edge[v2].remove(edge_index)
+        self.edges.pop(edge_index)
+        self.update_edge_numbering(edge_index)
+        if edge_index in self.fracture_edges:
+            self.fracture_edges.remove(edge_index)
 
+        
     def do_remove_edge(self, line):
         """ Removes edge from graph. 
         """
         index = int(line.split()[0])
         if index < 0 :
             index = len(self.edges)+index
-        [v1, v2] = self.edges[index]
-        self.vert_to_edge[v1].remove(index)
-        self.vert_to_edge[v2].remove(index)
-        self.edges.pop(index)
-        self.update_edge_numbering(index)
-        if index in self.fracture_edges:
-            self.fracture_edges.remove(index)
-        
+        self.remove_edge(index)
+
+
     def do_intersect_all(self, line):
         """ Intersect all edges. 
         """
@@ -723,7 +986,7 @@ class mesher(cmd.Cmd):
             current_index += 1
 
     def do_intersect_fractures(self, line):
-        """ Intersect allf fractures. 
+        """ Intersect all fractures. 
         """
         for edge_index in self.fracture_edges:
             self.intersect_edge(edge_index)
