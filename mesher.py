@@ -249,6 +249,8 @@ class mesher(cmd.Cmd):
                 point2 = self.vertices[edge[1]]
                 plt.plot([point1[0], point2[0]], 
                          [point1[1], point2[1]], 'k-', color = 'y', linewidth = 8.)
+
+        plt.axis('off')
         plt.show()        
         
     def do_remove_leaves(self, line):
