@@ -42,7 +42,7 @@ class mesher(cmd.Cmd):
     def __init__(self): 
         cmd.Cmd.__init__(self)
 
-        self.threshold = 1.e-5
+        self.threshold = 1.e-9
         self.vertices = []
         self.edges = []
         self.vert_to_edge = {}
@@ -351,10 +351,8 @@ class mesher(cmd.Cmd):
             point2 = self.vertices[v2]
             return (point2[0]-point1[0])*(point2[1]+point1[1])
 
-
         counter_c_edges = range(len(self.edges))
         c_edges = range(len(self.edges))
-        
         
         while len(counter_c_edges) > 0:
             edge_index = counter_c_edges.pop(0)
@@ -374,7 +372,6 @@ class mesher(cmd.Cmd):
             if next_v1 == current_v2:
                 next_vertex = next_v2
                 direction_sum += direction_int(next_v1, next_v2)
-                print counter_c_edges, next_edge
                 counter_c_edges.remove(next_edge)
                 #done_edges.add((next_edge, 1))
                 current_index_path.append([next_edge, 1])
@@ -391,7 +388,9 @@ class mesher(cmd.Cmd):
             while next_vertex != original_v1:
                 current_path.append(self.vertices[next_vertex])
 
+                print "v = ", next_vertex
                 next_edge = self.find_next_edge_cc(next_edge, next_vertex)
+
 
                 current_polygon.append(next_edge)
                 [next_v1, next_v2] = self.edges[next_edge]
@@ -419,125 +418,69 @@ class mesher(cmd.Cmd):
                 polygons.append(current_polygon)
                 paths.append(current_path)
                 index_paths.append(current_index_path)
-        return 
 
+        while len(c_edges) > 0:
+            edge_index = c_edges.pop(0)
             
-            
-        for edge_index in range(len(self.edges)):
-            if (edge_index, 1) not in done_edges:
-                direction_sum = 0.
-                current_polygon = [edge_index]
-                [current_v1, current_v2] = self.edges[edge_index]
-                original_v1 = current_v1
-                current_path = [self.vertices[current_v1], self.vertices[current_v2]]
-                current_index_path = [(edge_index, 1)]
-                direction_sum += direction_int(current_v1, current_v2)
-                ## Loop counter-clockwise
-                next_edge = self.find_next_edge_cc(edge_index, current_v2)
+            ## Loop clockwise                
+            direction_sum = 0.
+
+            current_polygon = [edge_index]
+            [current_v1, current_v2] = self.edges[edge_index]
+            original_v1 = current_v1
+            current_path = [self.vertices[current_v1], self.vertices[current_v2]]
+            current_index_path = [(edge_index, -1)]
+            direction_sum += direction_int(current_v1, current_v2)
+            next_edge = self.find_next_edge_c(edge_index, current_v2)
+
+            current_polygon.append(next_edge)
+            [next_v1, next_v2] = self.edges[next_edge]
+            if next_v1 == current_v2:
+                next_vertex = next_v2
+                direction_sum += direction_int(next_v1, next_v2)
+                c_edges.remove(next_edge)
+                #done_edges.add((next_edge, -1))
+                current_index_path.append((next_edge, -1))
+
+            elif next_v2 == current_v2:
+                next_vertex = next_v1
+                direction_sum += direction_int(next_v2, next_v1)
+                counter_c_edges.remove(next_edge)
+                #done_edges.add((next_edge, 1))
+                current_index_path.append((next_edge, 1))
+
+            else:
+                raise Exception("Problem traversing graph")
+            while next_vertex != original_v1:
+                current_path.append(self.vertices[next_vertex])
+
+                next_edge = self.find_next_edge_c(next_edge, next_vertex)
 
                 current_polygon.append(next_edge)
                 [next_v1, next_v2] = self.edges[next_edge]
-
-                if next_v1 == current_v2:
+                if next_v1 == next_vertex:
                     next_vertex = next_v2
                     direction_sum += direction_int(next_v1, next_v2)
-                    done_edges.add((next_edge, 1))
-                    current_index_path.append((next_edge, 1))
-
-                elif next_v2 == current_v2:
-                    next_vertex = next_v1
-                    direction_sum += direction_int(next_v2, next_v1)
-                    done_edges.add((next_edge, -1))
+                    c_edges.remove(next_edge)
+                    #done_edges.add((next_edge, -1))
                     current_index_path.append((next_edge, -1))
-
-                else:
-                    raise Exception("Problem traversing graph")
-                while next_vertex != original_v1:
-                    current_path.append(self.vertices[next_vertex])
-
-                    next_edge = self.find_next_edge_cc(next_edge, next_vertex)
-
-                    current_polygon.append(next_edge)
-                    [next_v1, next_v2] = self.edges[next_edge]
-
-                    if next_v1 == next_vertex:
-                        next_vertex = next_v2
-                        direction_sum += direction_int(next_v1, next_v2)
-                        done_edges.add((next_edge, 1))
-                        current_index_path.append((next_edge, 1))
-
-                    elif next_v2 == next_vertex:
-                        next_vertex = next_v1
-                        direction_sum += direction_int(next_v2, next_v1)
-                        done_edges.add((next_edge, -1))
-                        current_index_path.append((next_edge, -1))
-
-                    else:
-                        raise Exception("Problem traversing graph")
-
-                if direction_sum < 0:
-                    boundaries += current_polygon
-                else:
-                    polygons.append(current_polygon)
-                    paths.append(current_path)
-                    index_paths.append(current_index_path)
-
-            if (edge_index, -1) not in done_edges:
-                ## Loop clockwise                
-                direction_sum = 0.
-
-                current_polygon = [edge_index]
-                [current_v1, current_v2] = self.edges[edge_index]
-                original_v1 = current_v1
-                current_path = [self.vertices[current_v1], self.vertices[current_v2]]
-                current_index_path = [(edge_index, -1)]
-                direction_sum += direction_int(current_v1, current_v2)
-                next_edge = self.find_next_edge_c(edge_index, current_v2)
-
-                current_polygon.append(next_edge)
-                [next_v1, next_v2] = self.edges[next_edge]
-                if next_v1 == current_v2:
-                    next_vertex = next_v2
-                    direction_sum += direction_int(next_v1, next_v2)
-                    done_edges.add((next_edge, -1))
-                    current_index_path.append((next_edge, -1))
-
-                elif next_v2 == current_v2:
-                    next_vertex = next_v1
+                elif next_v2 == next_vertex:
+                    next_vertex = next_v1                        
                     direction_sum += direction_int(next_v2, next_v1)
-                    done_edges.add((next_edge, 1))
+                    counter_c_edges.remove(next_edge)
+                    #done_edges.add((next_edge, 1))
                     current_index_path.append((next_edge, 1))
 
                 else:
                     raise Exception("Problem traversing graph")
-                while next_vertex != original_v1:
-                    current_path.append(self.vertices[next_vertex])
-                    
-                    next_edge = self.find_next_edge_c(next_edge, next_vertex)
 
-                    current_polygon.append(next_edge)
-                    [next_v1, next_v2] = self.edges[next_edge]
-                    if next_v1 == next_vertex:
-                        next_vertex = next_v2
-                        direction_sum += direction_int(next_v1, next_v2)
-                        done_edges.add((next_edge, -1))
-                        current_index_path.append((next_edge, -1))
-                    elif next_v2 == next_vertex:
-                        next_vertex = next_v1                        
-                        direction_sum += direction_int(next_v2, next_v1)
-                        done_edges.add((next_edge, 1))
-                        current_index_path.append((next_edge, 1))
-
-                    else:
-                        raise Exception("Problem traversing graph")
-
-                if direction_sum > 0:
-                    boundaries += current_polygon
-                else:
-                    polygons.append(current_polygon)
-                    paths.append(current_path)
-                    current_index_path.reverse()
-                    index_paths.append(current_index_path)
+            if direction_sum > 0:
+                boundaries += current_polygon
+            else:
+                polygons.append(current_polygon)
+                paths.append(current_path)
+                current_index_path.reverse()
+                index_paths.append(current_index_path)
                     
         self.polygons = index_paths
         self.boundaries = boundaries
@@ -548,7 +491,7 @@ class mesher(cmd.Cmd):
         patches = map(lambda x:Polygon(x, True), map(lambda x:np.array(x), paths))
         p = PatchCollection(patches,cmap=matplotlib.cm.jet,  alpha=1.0)
 
-#        p.set_array(np.random.rand(len(paths)))
+        p.set_array(np.random.rand(len(paths)))
         p.set_array(np.ones(len(paths)))
         ax.add_collection(p)
         p.set_clim([0., 1.])
