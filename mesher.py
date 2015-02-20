@@ -388,9 +388,7 @@ class mesher(cmd.Cmd):
             while next_vertex != original_v1:
                 current_path.append(self.vertices[next_vertex])
 
-                print "v = ", next_vertex
                 next_edge = self.find_next_edge_cc(next_edge, next_vertex)
-
 
                 current_polygon.append(next_edge)
                 [next_v1, next_v2] = self.edges[next_edge]
@@ -399,14 +397,12 @@ class mesher(cmd.Cmd):
                     next_vertex = next_v2
                     direction_sum += direction_int(next_v1, next_v2)
                     counter_c_edges.remove(next_edge)
-                    #done_edges.add((next_edge, 1))
                     current_index_path.append([next_edge, 1])
 
                 elif next_v2 == next_vertex:
                     next_vertex = next_v1
                     direction_sum += direction_int(next_v2, next_v1)
                     c_edges.remove(next_edge)
-                    #done_edges.add((next_edge, -1))
                     current_index_path.append([next_edge, -1])
 
                 else:
@@ -907,7 +903,6 @@ class mesher(cmd.Cmd):
         self.update_edge_numbering(edge_index)
         if edge_index in self.fracture_edges:
             self.fracture_edges.remove(edge_index)
-
         
     def do_remove_edge(self, line):
         """ Removes edge from graph. 
@@ -916,7 +911,6 @@ class mesher(cmd.Cmd):
         if index < 0 :
             index = len(self.edges)+index
         self.remove_edge(index)
-
 
     def do_intersect_all(self, line):
         """ Intersect all edges. 
@@ -1035,7 +1029,6 @@ class mesher(cmd.Cmd):
                         self.add_edge(ij_to_point[(i, j)], 
                                       ij_to_point[(i, j+1)])
 
-
     def do_build_bdm_mesh(self, line):
         """ Builds rectangular mesh with two degrees of freedom 
         per face. Input:
@@ -1093,6 +1086,5 @@ class mesher(cmd.Cmd):
 
                     self.add_edge(ij_mid_to_point[(i, j)], 
                                   ij_to_point[(i, j+1)])
-                    
-        
+                            
 mesher().cmdloop()
