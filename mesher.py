@@ -623,8 +623,8 @@ class mesher(cmd.Cmd):
 
         res_mesh.build_frac_from_faces([edge_to_face_map[edge_index] for edge_index in self.fracture_edges])
             
-        res_mesh.output_vtk_mesh(file_name, [res_mesh.get_cell_domain_all(), 
-                                             [k[0, 0] for k in res_mesh.get_all_k()]], ["DOMAIN", "K"])
+        res_mesh.output_vtk_mesh(file_name, [res_mesh.get_cell_domain_all(),], ["DOMAIN"])
+                                 
         pickle_file = open(file_name, 'w')
         pickle.dump(res_mesh, pickle_file)
         pickle_file.close()
