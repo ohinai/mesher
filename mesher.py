@@ -13,7 +13,6 @@ import pickle
 
 import sys 
 
-
 from mimpy.mesh import mesh
 
 plt.ion()
@@ -570,10 +569,6 @@ class mesher(cmd.Cmd):
             res_mesh.set_face_area(top_face_index, area)
             res_mesh.set_face_real_centroid(top_face_index, centroid)
 
-            res_mesh.set_face_quadrature_points(top_face_index, 
-                                                [centroid])
-            res_mesh.set_face_quadrature_weights(top_face_index, 
-                                                 [area])
 
             bot_face_index = res_mesh.add_face(bot_face)
             
@@ -583,10 +578,6 @@ class mesher(cmd.Cmd):
             res_mesh.set_face_area(bot_face_index, area)
             res_mesh.set_face_real_centroid(bot_face_index, centroid)
 
-            res_mesh.set_face_quadrature_points(bot_face_index, 
-                                                [centroid])
-            res_mesh.set_face_quadrature_weights(bot_face_index, 
-                                                 [area])
 
             res_mesh.add_boundary_face(0,  bot_face_index, -1)
             res_mesh.add_boundary_face(1,  top_face_index, 1)
@@ -604,18 +595,9 @@ class mesher(cmd.Cmd):
             res_mesh.set_cell_real_centroid(new_cell_index, centroid)
             res_mesh.set_cell_volume(new_cell_index, volume)
 
-            res_mesh.set_cell_quadrature_points(new_cell_index, [centroid])
-            res_mesh.set_cell_quadrature_weights(new_cell_index, [volume])
-            
-
         for edge_index in self.boundaries:
             face_index = edge_to_face_map[edge_index]
             res_mesh.add_boundary_face(2, face_index, 1)
-            res_mesh.set_face_quadrature_points(face_index, 
-                                                [res_mesh.get_face_real_centroid(face_index)])
-            res_mesh.set_face_quadrature_weights(face_index, 
-                                                 [res_mesh.get_face_area(face_index)])
-            
 
         res_mesh.build_frac_from_faces([edge_to_face_map[edge_index] for edge_index in self.fracture_edges])
             
