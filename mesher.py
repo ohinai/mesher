@@ -29,14 +29,13 @@ def line_line_intersection(a1, a2, b1, b2):
     
     return (a_intersect, ts)
 
-class mesher(cmd.Cmd):
+class Mesher(cmd.Cmd):
     
     show_edges = True
     show_vertices = True
 
     show_edge_numbering = True 
     show_vertex_numbering = True
-
 
     def __init__(self): 
         cmd.Cmd.__init__(self)
@@ -57,7 +56,6 @@ class mesher(cmd.Cmd):
         
         self.highlight_edges = None
 
-        
     def emptyline(self):
         pass
 
@@ -585,7 +583,6 @@ class mesher(cmd.Cmd):
             res_mesh.set_face_area(bot_face_index, area)
             res_mesh.set_face_real_centroid(bot_face_index, centroid)
 
-
             res_mesh.add_boundary_face(0,  bot_face_index, -1)
             res_mesh.add_boundary_face(1,  top_face_index, 1)
 
@@ -609,10 +606,12 @@ class mesher(cmd.Cmd):
         res_mesh.build_frac_from_faces([edge_to_face_map[edge_index] for edge_index in self.fracture_edges])
             
         res_mesh.output_vtk_mesh(file_name, [res_mesh.get_cell_domain_all(),], ["DOMAIN"])
-                                 
-        pickle_file = open(file_name, 'w')
-        pickle.dump(res_mesh, pickle_file)
-        pickle_file.close()
+        
+        res_mesh.save_mesh(file_name)
+        
+        #pickle_file = open(file_name, 'w')
+        #pickle.dump(res_mesh, pickle_file)
+        #pickle_file.close()
 
     def do_EOF(self, line):
         return True
@@ -1082,5 +1081,17 @@ class mesher(cmd.Cmd):
 
                     self.add_edge(ij_mid_to_point[(i, j)], 
                                   ij_to_point[(i, j+1)])
-                            
-mesher().cmdloop()
+                  
+
+if __name__ == "__main__":
+    
+    local_mesher = Mesher()
+
+    if len(sys.argv)>1:
+        try:
+            local_mesher.do_load_commands(sys.argv[1])
+            
+        except IOError:
+            print "Cannot open ", sys.argv[1]
+    else:
+        local_mesher.cmdloop()
