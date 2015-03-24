@@ -340,7 +340,6 @@ class Mesher(cmd.Cmd):
         """
         show_poly = False
         line_split = line.split()
-        print line_split
         if len(line_split)> 0:
             if line_split[0][:1] == "s":
                 show_poly = True
@@ -691,7 +690,6 @@ class Mesher(cmd.Cmd):
         all_pos = True
         all_neg = True
         index = 0
-        print index_v1, index_v2 
         for point in points:
             v2 = p2-point
             ## Check if colinear with existing edge.
