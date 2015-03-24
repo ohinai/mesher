@@ -340,6 +340,13 @@ class mesher(cmd.Cmd):
     def do_polygons(self, line):
         """ Compute all polgons in the graph.
         """
+        show_poly = False
+        line_split = line.split()
+        print line_split
+        if len(line_split)> 0:
+            if line_split[0][:1] == "s":
+                show_poly = True
+
         done_edges = set()
         polygons = []
         boundaries = []
@@ -480,20 +487,20 @@ class mesher(cmd.Cmd):
         self.polygons = index_paths
         self.boundaries = boundaries
 
-        return 
-        fig=pylab.figure()
-        ax=fig.add_subplot(111)
-        patches = map(lambda x:Polygon(x, True), map(lambda x:np.array(x), paths))
-        p = PatchCollection(patches,cmap=matplotlib.cm.jet,  alpha=1.0)
+        if show_poly:
+            fig=pylab.figure()
+            ax=fig.add_subplot(111)
+            patches = map(lambda x:Polygon(x, True), map(lambda x:np.array(x), paths))
+            p = PatchCollection(patches,cmap=matplotlib.cm.jet,  alpha=1.0)
+            
+            p.set_array(np.random.rand(len(paths)))
+            p.set_array(np.ones(len(paths)))
+            ax.add_collection(p)
+            p.set_clim([0., 1.])
 
-        p.set_array(np.random.rand(len(paths)))
-        p.set_array(np.ones(len(paths)))
-        ax.add_collection(p)
-        p.set_clim([0., 1.])
-
-        ax.autoscale_view(True, True, True)
-
-        pylab.show()
+            ax.autoscale_view(True, True, True)
+            
+            pylab.show()
     
     def do_set_fracture(self, line):
         """ Sets edge as fracture edge. 
@@ -684,8 +691,14 @@ class mesher(cmd.Cmd):
         v1 = p2-p1
         all_pos = True
         all_neg = True
+        index = 0
+        print index_v1, index_v2 
         for point in points:
             v2 = p2-point
+            ## Check if colinear with existing edge.
+            if abs(v1.dot(v2)/np.linalg.norm(v2)-
+                    np.linalg.norm(np.array(v1)))<self.threshold:
+                return index
             if np.cross(np.array([v1[0], v1[1], 0.]),
                         np.array([v2[0], v2[1], 0.]))[2] > 0.:
                 signs.append(1)
@@ -693,6 +706,7 @@ class mesher(cmd.Cmd):
             else:
                 signs.append(-1)
                 all_pos = False
+            index += 1
 
         if all_pos:
             return 0
@@ -741,7 +755,7 @@ class mesher(cmd.Cmd):
         edge_index = self.add_edge(v1, v2)
         print "new edge","[", edge_index , "]", v1, "<->", v2
 
-    def update_v_to_e(self, edge_index, v1, v2 ):
+    def update_v_to_e(self, edge_index, v1, v2):
         """ Updates the vertex to edge map 
         for new edge. 
         """
@@ -756,7 +770,7 @@ class mesher(cmd.Cmd):
             self.vert_to_edge[v2].insert(pos, edge_index)
         else:
             self.vert_to_edge[v2] = [edge_index]
-            
+
     def do_svtov(self, line):
         """ Snaps edge index to second index location. 
         """
@@ -787,10 +801,10 @@ class mesher(cmd.Cmd):
         edge = self.edges[edge_index]
         point1 = self.vertices[edge[0]]
         point2 = self.vertices[edge[1]]
-        
+
         # edges in graph to be modified 
         edge_mod = []
-        
+
         # vertices on the primary line
         segments = []
         for (current_index, current_edge) in enumerate(self.edges):
@@ -799,15 +813,15 @@ class mesher(cmd.Cmd):
             else:
                 current_point1 = self.vertices[current_edge[0]]
                 current_point2 = self.vertices[current_edge[1]]
-                
+
                 (intersection, param) = line_line_intersection(point1,
                                                                point2,
                                                                current_point1,
                                                                current_point2)
-                if (abs(param[0])<self.threshold or abs(param[0]-1)<self.threshold) and \
-                        (abs(param[1])<self.threshold or abs(param[1]-1)<self.threshold):
+                if (abs(param[0])<self.threshold or abs(param[0]-1.)<self.threshold) and \
+                        (abs(param[1])<self.threshold or abs(param[1]-1.)<self.threshold):
                     pass
-                elif 0-self.threshold<=param[0]<=1.+self.threshold \
+                elif 0.-self.threshold<=param[0]<=1.+self.threshold \
                         and 0.-self.threshold<=param[1]<=1.+self.threshold:
                     if abs(param[0])<self.threshold:
                         edge_mod.append([current_index, edge[0]])
@@ -827,8 +841,8 @@ class mesher(cmd.Cmd):
         for current_mod in edge_mod:
             current_index = current_mod[0]
             point_index = current_mod[1]
-            new_edge = self.add_edge(self.edges[current_index][1], point_index)
-            self.set_edge(current_index, self.edges[current_index][0], point_index )
+            new_edge = self.add_edge(point_index, self.edges[current_index][1])
+            self.set_edge(current_index, self.edges[current_index][0], point_index)
             if current_index in self.fracture_edges:
                 self.fracture_edges.append(new_edge)
             
@@ -882,9 +896,9 @@ class mesher(cmd.Cmd):
         self.vert_to_edge[v1].remove(edge_index)
         self.vert_to_edge[v2].remove(edge_index)
         self.edges.pop(edge_index)
-        self.update_edge_numbering(edge_index)
         if edge_index in self.fracture_edges:
             self.fracture_edges.remove(edge_index)
+        self.update_edge_numbering(edge_index)
         
     def do_remove_edge(self, line):
         """ Removes edge from graph. 
