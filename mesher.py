@@ -607,11 +607,11 @@ class Mesher(cmd.Cmd):
             
         res_mesh.output_vtk_mesh(file_name, [res_mesh.get_cell_domain_all(),], ["DOMAIN"])
         
-        res_mesh.save_mesh(file_name)
+        #res_mesh.save_mesh(file_name)
         
-        #pickle_file = open(file_name, 'w')
-        #pickle.dump(res_mesh, pickle_file)
-        #pickle_file.close()
+        pickle_file = open(file_name, 'w')
+        pickle.dump(res_mesh, pickle_file)
+        pickle_file.close()
 
     def do_EOF(self, line):
         return True
