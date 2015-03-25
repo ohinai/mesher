@@ -932,7 +932,6 @@ class Mesher(cmd.Cmd):
         for edge, vert1, vert2 in to_be_set:
             self.set_edge(edge, vert1, vert2)
 
-            
     def do_merge_two_vertices(self, line):
         """ Merges two vertices into one vertex. 
         Uses the midpoint between them as the new point. 
@@ -942,7 +941,35 @@ class Mesher(cmd.Cmd):
         v2 = int(line_split[1])
         new_point = self.merge_two_vertices(v1, v2)
         print "merged ", v1, "<=>", v2, "new point = ", new_point
+
+
+    def do_merge_fracture_vertices(self, line):
+        """ Merges vertices on fracture with other 
+        vertices in the graph that are too close. 
+        """
+        merge_thresh = float(line.split()[0])
         
+
+        def merge_aux():
+            for f_edge in self.fracture_edges:
+                [f_v1, f_v2] = self.edges[f_edge]
+                f_p1 = self.vertices[f_v1]
+                for o_edge in self.vert_to_edge[f_v1]:
+                    if o_edge != f_edge:
+                        o_vertices = list(self.edges[o_edge])
+                        o_vertices.remove(f_v1)
+                        o_v = o_vertices[0]
+                        o_p = self.vertices[o_v]
+                        if np.linalg.norm(o_p-f_p1)<merge_thresh:
+                            self.merge_two_vertices(f_v1, o_v)
+                            return merge_aux()
+            return
+                
+        merge_aux()         
+                
+            
+        
+
     def remove_edge(self, edge_index):
         """ Removes edge from graph. 
         """
