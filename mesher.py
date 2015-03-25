@@ -725,6 +725,7 @@ class Mesher(cmd.Cmd):
         plt.clf()
         v_index = int(line.split()[0])
         print "showing vertices connected with", v_index
+        print self.vert_to_edge[v_index]
         vertex = self.vertices[v_index]
         plt.scatter(vertex[0], vertex[1])
         for (loc, edge_index) in enumerate(self.vert_to_edge[v_index]):
@@ -885,7 +886,63 @@ class Mesher(cmd.Cmd):
         for (index, frac_index) in enumerate(self.fracture_edges):
             if frac_index > edge_index:
                 self.fracture_edges[index] -= 1
-    
+
+    def merge_two_vertices(self, v1, v2):
+        """ Merges two vertices into one vertex. 
+        Uses the midpoint between them as the new point. 
+        """
+        to_be_removed = []
+        ## Remove edges that have v1 and v2 as vertices 
+        ## since these will become degenerate
+        for edge in self.vert_to_edge[v2]:
+            [current_v1, current_v2] = self.edges[edge]
+            if (current_v1 == v1 and current_v2 == v2) or \
+                    (current_v1 == v2 and current_v2 == v1):
+                to_be_removed.append(edge)
+
+        ## Remove edges that will overlap 
+        ## with existing edges. 
+        for edge1 in self.vert_to_edge[v1]:
+            if self.edges[edge1][0] == v1:
+                edge1_v2 = self.edges[edge1][1]
+            else:
+                edge1_v2 = self.edges[edge1][0]
+            for edge2 in self.vert_to_edge[v2]:
+                if self.edges[edge2][0] == v2:
+                    edge2_v2 = self.edges[edge2][1]
+                else:
+                    edge2_v2 = self.edges[edge2][0]
+                
+                if edge1_v2 == edge2_v2:
+                    print edge2
+                    to_be_removed.append(edge2)
+        
+        self.remove_list_edges(to_be_removed)
+
+        to_be_set = []
+        for edge in self.vert_to_edge[v2]:
+            [current_v1, current_v2] = self.edges[edge]
+            if current_v1 == v2:
+                to_be_set.append([edge, v1, current_v2])
+                #self.set_edge(edge, v1, current_v2)
+            elif current_v2 == v2:
+                to_be_set.append([edge, current_v1, v1])
+                #self.set_edge(edge, current_v1, v1)
+        
+        for edge, vert1, vert2 in to_be_set:
+            self.set_edge(edge, vert1, vert2)
+
+            
+    def do_merge_two_vertices(self, line):
+        """ Merges two vertices into one vertex. 
+        Uses the midpoint between them as the new point. 
+        """
+        line_split = line.split()
+        v1 = int(line_split[0])
+        v2 = int(line_split[1])
+        new_point = self.merge_two_vertices(v1, v2)
+        print "merged ", v1, "<=>", v2, "new point = ", new_point
+        
     def remove_edge(self, edge_index):
         """ Removes edge from graph. 
         """
@@ -896,7 +953,18 @@ class Mesher(cmd.Cmd):
         if edge_index in self.fracture_edges:
             self.fracture_edges.remove(edge_index)
         self.update_edge_numbering(edge_index)
-        
+
+    def remove_list_edges(self, edge_list):
+        """ Removes a list of edges from the graph. 
+        """
+        to_be_removed = list(edge_list)
+        while len(to_be_removed) > 0:
+            current_edge = to_be_removed.pop()
+            self.remove_edge(current_edge)
+            for (index, edge) in enumerate(to_be_removed):
+                if edge > current_edge:
+                    to_be_removed[index] -= 1
+
     def do_remove_edge(self, line):
         """ Removes edge from graph. 
         """
