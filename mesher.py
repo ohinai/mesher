@@ -40,7 +40,7 @@ class Mesher(cmd.Cmd):
     def __init__(self): 
         cmd.Cmd.__init__(self)
 
-        self.threshold = 1.e-9
+        self.threshold = 1.e-10
         self.vertices = []
         self.edges = []
         self.vert_to_edge = {}
@@ -82,7 +82,6 @@ class Mesher(cmd.Cmd):
     def do_save_mesh(self, line):
         """ Saves current mesh in file. 
         """
-
         file_name = line.split()[0]
         
         output_file = open(file_name, 'w')
@@ -622,10 +621,8 @@ class Mesher(cmd.Cmd):
         index  = int(line_split[0])
         x = float(line_split[1])
         y = float(line_split[2])
-        
-
+    
         self.vertices[index] = np.array([x, y])
-
 
     def do_ectov(self, line):
         """ Returns the edges connected to 
@@ -787,6 +784,12 @@ class Mesher(cmd.Cmd):
         self.vert_to_edge[orig_v1].remove(edge_index)
         self.vert_to_edge[orig_v2].remove(edge_index)
 
+        if len(self.vert_to_edge[orig_v1]) == 2:
+            self.update_vte_for_two_edges(orig_v1)
+
+        if len(self.vert_to_edge[orig_v2]) == 2:
+            self.update_vte_for_two_edges(orig_v2)
+
         self.edges[edge_index][0] = v1
         self.edges[edge_index][1] = v2
 
@@ -900,6 +903,8 @@ class Mesher(cmd.Cmd):
                     (current_v1 == v2 and current_v2 == v1):
                 to_be_removed.append(edge)
 
+        print "v2e1 ->", self.vert_to_edge[v1]
+
         ## Remove edges that will overlap 
         ## with existing edges. 
         for edge1 in self.vert_to_edge[v1]:
@@ -914,7 +919,6 @@ class Mesher(cmd.Cmd):
                     edge2_v2 = self.edges[edge2][0]
                 
                 if edge1_v2 == edge2_v2:
-                    print edge2
                     to_be_removed.append(edge2)
         
         self.remove_list_edges(to_be_removed)
@@ -924,13 +928,13 @@ class Mesher(cmd.Cmd):
             [current_v1, current_v2] = self.edges[edge]
             if current_v1 == v2:
                 to_be_set.append([edge, v1, current_v2])
-                #self.set_edge(edge, v1, current_v2)
             elif current_v2 == v2:
                 to_be_set.append([edge, current_v1, v1])
-                #self.set_edge(edge, current_v1, v1)
+
         
         for edge, vert1, vert2 in to_be_set:
             self.set_edge(edge, vert1, vert2)
+
 
     def do_merge_two_vertices(self, line):
         """ Merges two vertices into one vertex. 
@@ -948,7 +952,6 @@ class Mesher(cmd.Cmd):
         vertices in the graph that are too close. 
         """
         merge_thresh = float(line.split()[0])
-        
 
         def merge_aux():
             for f_edge in self.fracture_edges:
@@ -966,16 +969,47 @@ class Mesher(cmd.Cmd):
             return
                 
         merge_aux()         
-                
-            
-        
 
+    def update_vte_for_two_edges(self, vertex):
+        """ Updates the vertex to edge ordering 
+        in case there are two edges left in the map. 
+        This avoids a special problem that happens 
+        removing edges from the graph. 
+        """
+        [edge1, edge2] = self.vert_to_edge[vertex]
+        
+        [e1_v1, e1_v2] = self.edges[edge1]
+        [e2_v1, e2_v2] = self.edges[edge2]
+
+        if e1_v1 == vertex:
+            e1_v = e1_v2
+        else:
+            e1_v = e1_v1
+
+        if e2_v1 == vertex:
+            e2_v = e2_v2
+        else:
+            e2_v = e2_v1
+            
+        vector1 = self.vertices[e1_v]-self.vertices[vertex]
+        vector2 = self.vertices[e2_v]-self.vertices[vertex]
+        
+        if np.cross(vector1, vector2)<0.:
+            self.vert_to_edge[vertex] = [edge2, edge1]
+            
     def remove_edge(self, edge_index):
         """ Removes edge from graph. 
         """
         [v1, v2] = self.edges[edge_index]
         self.vert_to_edge[v1].remove(edge_index)
         self.vert_to_edge[v2].remove(edge_index)
+        
+        if len(self.vert_to_edge[v1]) == 2:
+            self.update_vte_for_two_edges(v1)
+
+        if len(self.vert_to_edge[v2]) == 2:
+            self.update_vte_for_two_edges(v2)
+
         self.edges.pop(edge_index)
         if edge_index in self.fracture_edges:
             self.fracture_edges.remove(edge_index)
