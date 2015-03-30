@@ -40,7 +40,9 @@ class Mesher(cmd.Cmd):
     def __init__(self): 
         cmd.Cmd.__init__(self)
 
-        self.threshold = 1.e-10
+        self.threshold = 1.e-9
+        self.point_threshold = 1.e-3
+        
         self.vertices = []
         self.edges = []
         self.vert_to_edge = {}
@@ -55,6 +57,12 @@ class Mesher(cmd.Cmd):
         self.session = []
         
         self.highlight_edges = None
+
+        ## Maintains the indices of the last 
+        ## vertices to be added to the graph. 
+        ## Used for negative indexing. 
+        self.vertex_cache = []
+        self.vertex_cache_size = 10
 
     def emptyline(self):
         pass
@@ -649,14 +657,24 @@ class Mesher(cmd.Cmd):
         """ Adds new vertex, returns 
         vertex index. 
         """
-        self.vertices.append(point)
-        self.bounding_box[0][0] = min(self.bounding_box[0][0], point[0])
-        self.bounding_box[1][0] = max(self.bounding_box[0][0], point[0])
+        vertex_index = -1
+        for (point_index, current_point) in enumerate(self.vertices):
+            if np.linalg.norm(point-current_point)<self.point_threshold:
+                vertex_index = point_index
+        if vertex_index < 0:
+            self.vertices.append(point)
+            vertex_index = len(self.vertices)-1            
+            self.bounding_box[0][0] = min(self.bounding_box[0][0], point[0])
+            self.bounding_box[1][0] = max(self.bounding_box[0][0], point[0])
+            
+            self.bounding_box[0][1] = min(self.bounding_box[0][1], point[1])
+            self.bounding_box[1][1] = max(self.bounding_box[0][1], point[1])
+        
+        self.vertex_cache.append(vertex_index)
+        if len(self.vertex_cache) > self.vertex_cache_size:
+            self.vertex_cache.pop(0)
 
-        self.bounding_box[0][1] = min(self.bounding_box[0][1], point[1])
-        self.bounding_box[1][1] = max(self.bounding_box[0][1], point[1])
-
-        return len(self.vertices)-1
+        return vertex_index
 
     def do_add_vertex(self, line):
         new_point = np.array(map(float, line.split()))
@@ -736,9 +754,9 @@ class Mesher(cmd.Cmd):
         
     def add_edge(self, v1, v2):
         if v1<0 :
-            v1 = len(self.vertices)+v1
+            v1 = self.vertex_cache[v1]
         if v2<0 :
-            v2 = len(self.vertices)+v2
+            v2 = self.vertex_cache[v2]
         self.edges.append([v1, v2])
 
         self.update_v_to_e(len(self.edges)-1, v1, v2)
@@ -808,6 +826,7 @@ class Mesher(cmd.Cmd):
 
         # vertices on the primary line
         segments = []
+        to_be_merged = []
         for (current_index, current_edge) in enumerate(self.edges):
             if edge_index == current_index:
                 pass
@@ -821,6 +840,15 @@ class Mesher(cmd.Cmd):
                                                                current_point2)
                 if (abs(param[0])<self.threshold or abs(param[0]-1.)<self.threshold) and \
                         (abs(param[1])<self.threshold or abs(param[1]-1.)<self.threshold):
+                    if abs(param[0])<self.threshold:
+                        merge1 = edge[0]
+                    else:
+                        merge1 = edge[1]
+                    if abs(param[1])<self.threshold:
+                        merge2 = current_edge[0]
+                    else:
+                        merge2 = current_edge[1]
+                    to_be_merged.append([merge1, merge2])
                     pass
                 elif 0.-self.threshold<=param[0]<=1.+self.threshold \
                         and 0.-self.threshold<=param[1]<=1.+self.threshold:
@@ -838,6 +866,10 @@ class Mesher(cmd.Cmd):
                             new_point = self.add_vertex(intersection)
                             edge_mod.append([current_index, new_point])
                             segments.append([param[0], new_point])
+
+
+        #for (merge1, merge2) in to_be_merged:
+        #    self.merge_two_vertices(merge1, merge2)
 
         for current_mod in edge_mod:
             current_index = current_mod[0]
@@ -875,6 +907,7 @@ class Mesher(cmd.Cmd):
                 done_edges.add(new_edge_index)
                 if add_to_frac:
                     self.fracture_edges.append(new_edge_index)
+
         return done_edges
 
     def update_edge_numbering(self, edge_index):
