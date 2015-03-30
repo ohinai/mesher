@@ -29,6 +29,22 @@ def line_line_intersection(a1, a2, b1, b2):
     
     return (a_intersect, ts)
 
+def is_point_on_line(point, a1, a2):
+    v1 = a2-a1
+    v2 = point-a1
+    if np.linalg.norm(v1)<np.linalg.norm(v2):
+        return False
+    if np.linalg.norm(v2)<1.e-8:
+        return True
+    if np.linalg.norm(point-a2)<1.e-8:
+        return True
+    v2_dot_v1 = np.linalg.norm(v2.dot(v1/np.linalg.norm(v1)))
+
+    if abs(v2_dot_v1-np.linalg.norm(v2))<1.e-8:
+        return True
+    return False
+
+
 class Mesher(cmd.Cmd):
     
     show_edges = True
@@ -490,6 +506,10 @@ class Mesher(cmd.Cmd):
                     
         self.polygons = index_paths
         self.boundaries = boundaries
+        
+        for boundary_index in boundaries:
+            if boundary_index in self.fracture_edges:
+                self.fracture_edges.remove(boundary_index)
 
         if show_poly:
             fig=pylab.figure()
@@ -653,13 +673,17 @@ class Mesher(cmd.Cmd):
         edge_index = int(line.split()[0])
         self.highlight_edges=edge_index
 
-    def add_vertex(self, point):
+    def add_vertex(self, point, point_threshold = None):
         """ Adds new vertex, returns 
         vertex index. 
         """
+        if point_threshold:
+            pass
+        else:
+            point_threshold = self.point_threshold
         vertex_index = -1
         for (point_index, current_point) in enumerate(self.vertices):
-            if np.linalg.norm(point-current_point)<self.point_threshold:
+            if np.linalg.norm(point-current_point)<point_threshold:
                 vertex_index = point_index
         if vertex_index < 0:
             self.vertices.append(point)
@@ -827,17 +851,19 @@ class Mesher(cmd.Cmd):
         # vertices on the primary line
         segments = []
         to_be_merged = []
+        to_be_removed =[]
         for (current_index, current_edge) in enumerate(self.edges):
             if edge_index == current_index:
                 pass
             else:
                 current_point1 = self.vertices[current_edge[0]]
                 current_point2 = self.vertices[current_edge[1]]
-
+                
                 (intersection, param) = line_line_intersection(point1,
                                                                point2,
                                                                current_point1,
                                                                current_point2)
+
                 if (abs(param[0])<self.threshold or abs(param[0]-1.)<self.threshold) and \
                         (abs(param[1])<self.threshold or abs(param[1]-1.)<self.threshold):
                     if abs(param[0])<self.threshold:
@@ -863,7 +889,8 @@ class Mesher(cmd.Cmd):
                         elif  abs(param[1]-1.) < self.threshold:
                             segments.append([param[0], current_edge[1]])
                         else:
-                            new_point = self.add_vertex(intersection)
+                            new_point = self.add_vertex(intersection, 
+                                                        point_threshold=self.threshold)
                             edge_mod.append([current_index, new_point])
                             segments.append([param[0], new_point])
 
@@ -907,8 +934,39 @@ class Mesher(cmd.Cmd):
                 done_edges.add(new_edge_index)
                 if add_to_frac:
                     self.fracture_edges.append(new_edge_index)
+        
+
+        self.remove_list_edges(to_be_removed)
 
         return done_edges
+
+    def remove_overlap(self, edge_index):
+        """ 
+        """
+        edge = self.edges[edge_index]
+        point1 = self.vertices[edge[0]]
+        point2 = self.vertices[edge[1]]
+
+        # edges in graph to be modified 
+        edge_mod = []
+
+        # vertices on the primary line
+        segments = []
+        to_be_merged = []
+        to_be_removed =[]
+        for (current_index, current_edge) in enumerate(self.edges):
+            if edge_index == current_index:
+                pass
+            else:
+                current_point1 = self.vertices[current_edge[0]]
+                current_point2 = self.vertices[current_edge[1]]
+                
+                if is_point_on_line(current_point1, point1, point2) and\
+                        is_point_on_line(current_point2, point1, point2):
+                    to_be_removed.append(current_index)
+                    print current_index 
+
+        self.remove_list_edges(to_be_removed)
 
     def update_edge_numbering(self, edge_index):
         """ After removing an edge, updates 
@@ -936,7 +994,7 @@ class Mesher(cmd.Cmd):
                     (current_v1 == v2 and current_v2 == v1):
                 to_be_removed.append(edge)
 
-        print "v2e1 ->", self.vert_to_edge[v1]
+        print "merging", v1, v2, "v2e1 ->", self.vert_to_edge[v1]
 
         ## Remove edges that will overlap 
         ## with existing edges. 
@@ -1078,10 +1136,14 @@ class Mesher(cmd.Cmd):
                 done_edges.union(self.intersect_edge(current_index))
 
             current_index += 1
-
+    
     def do_intersect_fractures(self, line):
         """ Intersect all fractures. 
         """
+
+        for edge_index in self.fracture_edges:
+            self.remove_overlap(edge_index)
+
         for edge_index in self.fracture_edges:
             self.intersect_edge(edge_index)
 
