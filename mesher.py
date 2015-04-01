@@ -901,10 +901,11 @@ class Mesher(cmd.Cmd):
         for current_mod in edge_mod:
             current_index = current_mod[0]
             point_index = current_mod[1]
-            new_edge = self.add_edge(point_index, self.edges[current_index][1])
-            self.set_edge(current_index, self.edges[current_index][0], point_index)
-            if current_index in self.fracture_edges:
-                self.fracture_edges.append(new_edge)
+            if  point_index != self.edges[current_index][1]:
+                new_edge = self.add_edge(point_index, self.edges[current_index][1])
+                self.set_edge(current_index, self.edges[current_index][0], point_index)
+                if current_index in self.fracture_edges:
+                    self.fracture_edges.append(new_edge)
             
         segments.sort()
 
@@ -915,6 +916,9 @@ class Mesher(cmd.Cmd):
             for seg_index in range(1, len(segments)):
                 if abs(segments[seg_index][0]-new_segments[-1][0])<self.threshold:
                     pass
+                elif segments[seg_index][1]==new_segments[-1][1]:
+                    pass
+
                 else:
                     new_segments.append(segments[seg_index])
             segments = new_segments
@@ -930,10 +934,11 @@ class Mesher(cmd.Cmd):
             for seg_index in range(len(segments)-1):
                 v1 = segments[seg_index][1]
                 v2 = segments[seg_index+1][1]
-                new_edge_index = self.add_edge(v1, v2)
-                done_edges.add(new_edge_index)
-                if add_to_frac:
-                    self.fracture_edges.append(new_edge_index)
+                if v1 != v2:
+                    new_edge_index = self.add_edge(v1, v2)
+                    done_edges.add(new_edge_index)
+                    if add_to_frac:
+                        self.fracture_edges.append(new_edge_index)
         
 
         self.remove_list_edges(to_be_removed)
