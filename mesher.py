@@ -969,7 +969,6 @@ class Mesher(cmd.Cmd):
                 if is_point_on_line(current_point1, point1, point2) and\
                         is_point_on_line(current_point2, point1, point2):
                     to_be_removed.append(current_index)
-                    print current_index 
 
         self.remove_list_edges(to_be_removed)
 
