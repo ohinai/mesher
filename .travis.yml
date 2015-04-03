@@ -6,6 +6,8 @@ install:
     - "pip install tox"
     - "pip install pytest"
     - "pip install matplotlib"
+    - "git clone https://github.com/ohinai/mimpy.git"
+    - "python mimpy/setup.py install"
 
 script:
     - tox
