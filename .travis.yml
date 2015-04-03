@@ -8,7 +8,7 @@ before_script:
     
 install:
     - "pip install tox"
-    - "pip install pytest"
+    - "pip install py.test"
     - "pip install matplotlib"
 
 script:
