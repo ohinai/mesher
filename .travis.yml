@@ -7,4 +7,3 @@ install:
 
 script:
 - tox
-- tox -e py34
