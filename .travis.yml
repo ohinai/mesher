@@ -7,7 +7,7 @@ install:
     - "pip install pytest"
     - "pip install matplotlib"
     - "git clone https://github.com/ohinai/mimpy.git"
-    - "python mimpy/setup.py install"
+    - "cd mimpy; python setup.py install; cd .."
 
 script:
     - tox
