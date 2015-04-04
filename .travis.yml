@@ -3,8 +3,8 @@ python:
     - "2.7"
 before_script:
     - 'pip install --install-option="--no-cython-compile" Cython'
-    - "git clone https://github.com/ohinai/mimpy.git"
-    - "cd mimpy; python setup.py install; cd "
+    - "cd ~; git clone https://github.com/ohinai/mimpy.git"
+    - "cd mimpy; python setup.py install; cd ~/ohinai/mesher"
     
 install:
     - "pip install tox"
