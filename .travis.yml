@@ -4,7 +4,7 @@ python:
 before_script:
     - 'pip install --install-option="--no-cython-compile" Cython'
     - "git clone https://github.com/ohinai/mimpy.git"
-    - "cd mimpy; python setup.py install; cd .."
+    - "cd mimpy; python setup.py install; cd "
     
 install:
     - "pip install tox"
