@@ -1,10 +1,10 @@
 language: python
 python:
     - "2.7"
-before_script:
+before_install:
     - 'pip install --install-option="--no-cython-compile" Cython'
     - "cd ~; git clone https://github.com/ohinai/mimpy.git"
-    - "cd mimpy; python setup.py install; cd ~/ohinai/mesher"
+    - "cd mimpy; python setup.py install; cd $TRAVIS_BUILD_DIR"
     
 install:
     - "pip install tox"
