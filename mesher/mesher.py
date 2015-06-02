@@ -10,8 +10,10 @@ import numpy as np
 import copy 
 
 import pickle 
+import matplotlib.image as mpimg 
 
 import sys 
+import io
 
 from mimpy.mesh import mesh
 
@@ -225,7 +227,6 @@ class Mesher(cmd.Cmd):
                 if self.show_edge_numbering:
                     mid_point = (point1+point2)/2.
                     plt.text(mid_point[0], mid_point[1], str(index))
-
 
             if self.highlight_edges != None:
                 edge = self.edges[self.highlight_edges]
@@ -600,7 +601,6 @@ class Mesher(cmd.Cmd):
             res_mesh.set_face_area(top_face_index, area)
             res_mesh.set_face_real_centroid(top_face_index, centroid)
 
-
             bot_face_index = res_mesh.add_face(bot_face)
             
             normal = res_mesh.find_face_normal(bot_face_index)
@@ -633,7 +633,7 @@ class Mesher(cmd.Cmd):
             
         res_mesh.output_vtk_mesh(file_name, [res_mesh.get_cell_domain_all(),], ["DOMAIN"])
         
-        #res_mesh.save_mesh(file_name)
+        res_mesh.save_mesh(open(file_name+"saved", 'w'))
         
         pickle_file = open(file_name, 'w')
         pickle.dump(res_mesh, pickle_file)
@@ -969,6 +969,7 @@ class Mesher(cmd.Cmd):
                 if is_point_on_line(current_point1, point1, point2) and\
                         is_point_on_line(current_point2, point1, point2):
                     to_be_removed.append(current_index)
+                    print current_index 
 
         self.remove_list_edges(to_be_removed)
 
