@@ -31,6 +31,19 @@ def line_line_intersection(a1, a2, b1, b2):
     
     return (a_intersect, ts)
 
+def is_point_on_ray(point, a1, a2):
+    v1 = a2-a1
+    v2 = point-a1
+    if np.linalg.norm(v2)<1.e-8:
+        return True
+    if np.linalg.norm(point-a2)<1.e-8:
+        return True
+    
+    v2_dot_v1 = np.linalg.norm(v2.dot(v1/np.linalg.norm(v1)))
+    if abs(v2_dot_v1-np.linalg.norm(v2))<1.e-8:
+        return True
+    return False
+    
 def is_point_on_line(point, a1, a2):
     v1 = a2-a1
     v2 = point-a1
@@ -786,7 +799,6 @@ class Mesher(cmd.Cmd):
         self.update_v_to_e(len(self.edges)-1, v1, v2)
         return len(self.edges)-1
 
-
     def do_add_edge(self, line):
         [v1, v2] = map(int, line.split())
         edge_index = self.add_edge(v1, v2)
@@ -969,8 +981,23 @@ class Mesher(cmd.Cmd):
                 if is_point_on_line(current_point1, point1, point2) and\
                         is_point_on_line(current_point2, point1, point2):
                     to_be_removed.append(current_index)
-                    print current_index 
+                    print current_index
+                elif is_point_on_line(current_point1, point1, point2) and\
+                        is_point_on_ray(current_point2, point1, point2):
+                    if np.linalg.norm(point1-current_point2) <\
+                            np.linalg.norm(point2-current_point2):
+                        self.set_edge(current_index, edge[0], current_edge[1])
+                    else:
+                        self.set_edge(current_index, edge[1], current_edge[1])
 
+                elif is_point_on_line(current_point2, point1, point2) and\
+                        is_point_on_ray(current_point1, point1, point2):
+                    if np.linalg.norm(point1-current_point1) <\
+                            np.linalg.norm(point2-current_point1):
+                        self.set_edge(current_index, edge[0], current_edge[0])
+                    else:
+                        self.set_edge(current_index, edge[1], current_edge[0])
+                
         self.remove_list_edges(to_be_removed)
 
     def update_edge_numbering(self, edge_index):
