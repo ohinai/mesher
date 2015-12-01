@@ -1,4 +1,4 @@
-
+#! /usr/bin/env python
 import cmd 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
@@ -71,7 +71,7 @@ class Mesher(cmd.Cmd):
     def __init__(self): 
         cmd.Cmd.__init__(self)
 
-        self.threshold = 1.e-9
+        self.threshold = 1.e-5
         self.point_threshold = 1.e-3
         
         self.vertices = []
@@ -746,7 +746,7 @@ class Mesher(cmd.Cmd):
             v2 = p2-point
             ## Check if colinear with existing edge.
             if abs(v1.dot(v2)/np.linalg.norm(v2)-
-                    np.linalg.norm(np.array(v1)))<self.threshold:
+                   np.linalg.norm(np.array(v1)))<self.threshold:
                 return index
             if np.cross(np.array([v1[0], v1[1], 0.]),
                         np.array([v2[0], v2[1], 0.]))[2] > 0.:
@@ -870,7 +870,7 @@ class Mesher(cmd.Cmd):
             else:
                 current_point1 = self.vertices[current_edge[0]]
                 current_point2 = self.vertices[current_edge[1]]
-                
+
                 (intersection, param) = line_line_intersection(point1,
                                                                point2,
                                                                current_point1,
@@ -887,7 +887,7 @@ class Mesher(cmd.Cmd):
                     else:
                         merge2 = current_edge[1]
                     to_be_merged.append([merge1, merge2])
-                    pass
+
                 elif 0.-self.threshold<=param[0]<=1.+self.threshold \
                         and 0.-self.threshold<=param[1]<=1.+self.threshold:
                     if abs(param[0])<self.threshold:
@@ -906,7 +906,6 @@ class Mesher(cmd.Cmd):
                             edge_mod.append([current_index, new_point])
                             segments.append([param[0], new_point])
 
-
         #for (merge1, merge2) in to_be_merged:
         #    self.merge_two_vertices(merge1, merge2)
 
@@ -915,10 +914,14 @@ class Mesher(cmd.Cmd):
             point_index = current_mod[1]
             if  point_index != self.edges[current_index][1]:
                 new_edge = self.add_edge(point_index, self.edges[current_index][1])
+                p1 = self.vertices[self.edges[current_index][0]]
+                p2 = self.vertices[point_index]
+                if np.linalg.norm(p1-p2)<self.threshold:
+                    print "HERE", p1
                 self.set_edge(current_index, self.edges[current_index][0], point_index)
                 if current_index in self.fracture_edges:
                     self.fracture_edges.append(new_edge)
-            
+
         segments.sort()
 
         done_edges = set()
@@ -930,7 +933,6 @@ class Mesher(cmd.Cmd):
                     pass
                 elif segments[seg_index][1]==new_segments[-1][1]:
                     pass
-
                 else:
                     new_segments.append(segments[seg_index])
             segments = new_segments
@@ -951,7 +953,6 @@ class Mesher(cmd.Cmd):
                     done_edges.add(new_edge_index)
                     if add_to_frac:
                         self.fracture_edges.append(new_edge_index)
-        
 
         self.remove_list_edges(to_be_removed)
 
@@ -1172,14 +1173,12 @@ class Mesher(cmd.Cmd):
     def do_intersect_fractures(self, line):
         """ Intersect all fractures. 
         """
-
         for edge_index in self.fracture_edges:
             self.remove_overlap(edge_index)
 
         for edge_index in self.fracture_edges:
             self.intersect_edge(edge_index)
 
-    
     def do_intersect_edge(self, line):
         """ For a given edge number, intersect it 
         with all other edges in the graph. 
