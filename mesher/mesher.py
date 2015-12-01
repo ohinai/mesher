@@ -436,6 +436,7 @@ class Mesher(cmd.Cmd):
                 if next_v1 == next_vertex:
                     next_vertex = next_v2
                     direction_sum += direction_int(next_v1, next_v2)
+                    #print "edge index", edge_index
                     counter_c_edges.remove(next_edge)
                     current_index_path.append([next_edge, 1])
 
@@ -646,7 +647,7 @@ class Mesher(cmd.Cmd):
             
         res_mesh.output_vtk_mesh(file_name, [res_mesh.get_cell_domain_all(),], ["DOMAIN"])
         
-        res_mesh.save_mesh(open(file_name+"saved", 'w'))
+        #res_mesh.save_mesh(open(file_name+"saved", 'w'))
         
         pickle_file = open(file_name, 'w')
         pickle.dump(res_mesh, pickle_file)
@@ -745,6 +746,8 @@ class Mesher(cmd.Cmd):
         for point in points:
             v2 = p2-point
             ## Check if colinear with existing edge.
+            if  np.linalg.norm(v2) < self.threshold:
+                raise Exception("edge length too small")
             if abs(v1.dot(v2)/np.linalg.norm(v2)-
                    np.linalg.norm(np.array(v1)))<self.threshold:
                 return index
@@ -1176,8 +1179,19 @@ class Mesher(cmd.Cmd):
         for edge_index in self.fracture_edges:
             self.remove_overlap(edge_index)
 
-        for edge_index in self.fracture_edges:
-            self.intersect_edge(edge_index)
+        current_index = 0
+        done_edges = set()
+        to_do_edges = list(self.fracture_edges)
+        while current_index < len(self.fracture_edges):            
+            if self.fracture_edges[current_index] not in done_edges:
+                done_edges.union(self.intersect_edge(self.fracture_edges[current_index]))
+
+            current_index += 1
+
+        #for current_edge in to_do_edges:
+        #    if current_edge not in done_edges:
+        #        done_edges.union(self.intersect_edge(current_edge))
+        
 
     def do_intersect_edge(self, line):
         """ For a given edge number, intersect it 
