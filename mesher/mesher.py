@@ -94,6 +94,8 @@ class Mesher(cmd.Cmd):
         
         self.highlight_edges = None
 
+        self.reservoir_depth = 1.
+
         ## Maintains the indices of the last 
         ## vertices to be added to the graph. 
         ## Used for negative indexing. 
@@ -366,8 +368,23 @@ class Mesher(cmd.Cmd):
         couter-clockwise. 
         """
         local_index = self.vert_to_edge[vertex].index(edge_index)
-        next_edge = self.vert_to_edge[vertex][(local_index+1)%len(self.vert_to_edge[vertex])]
-        return next_edge
+        next_edge_index = self.vert_to_edge[vertex][(local_index+1)%len(self.vert_to_edge[vertex])]
+        return next_edge_index
+
+    def find_next_edge_vertex_cc(self, edge_index, vertex):
+        """ Finds next edge and vertex looping 
+        couter-clockwise. 
+        """
+        #local_index = self.vert_to_edge[vertex].index(edge_index)
+        #next_edge_index = self.vert_to_edge[vertex][(local_index+1)%len(self.vert_to_edge[vertex])]
+        #next_edge = self.edges[next_edge_index]
+        local_index = self.vert_to_edge[vertex].index(edge_index)
+        next_edge_index = self.vert_to_edge[vertex][local_index-1]
+        next_edge = self.edges[next_edge_index]
+        if next_edge[0] == vertex:
+            return next_edge_index, next_edge[1], next_edge[0]
+        else:
+            return next_edge_index, next_edge[0], next_edge[1]
 
     def find_next_edge_c(self, edge_index, vertex):
         """ Finds next edge looping 
@@ -387,8 +404,8 @@ class Mesher(cmd.Cmd):
             [p, ts] = line_line_intersection(self.vertices[b1], self.vertices[b2], point, point_2)
             if abs(ts[0])<1.e-6 or abs(ts[0]-1.)<1.e-6:
                 return self.is_point_in_polygon(point, 
-                                           polygon, 
-                                           point_2 = point+np.array([random.random(), random.random()]))
+                                                polygon, 
+                                                point_2 = point+np.array([random.random(), random.random()]))
 
             elif ts[0]+self.threshold >= 0. and ts[0]-self.threshold <=1. and ts[1]+self.threshold>=0.:
                 intersection_count += 1
@@ -397,7 +414,51 @@ class Mesher(cmd.Cmd):
             return False
 
         return True
+    
+    def do_remove_fractures_from_holes(self, line):
+        """ Removes fracture segments if 
+        they intersect a hole. 
+        """                
+        for hole in [self.holes[2]]:
+            intersections = []
+            point_2  = hole+np.array([random.random()*10., random.random()*10.])
+            for (edge_index, edge) in enumerate(self.edges):
+                if edge_index not in self.fracture_edges:
+                    p1 = self.vertices[edge[0]]
+                    p2 = self.vertices[edge[1]]
+                    (intersect, ts) = line_line_intersection(p1, p2, hole, point_2)
+                    if intersect != None:
+                        if -1.e-6<=ts[0]<=1.+1.e-6:
+                            intersections.append([abs(ts[1]), edge_index])
 
+            [_, min_edge] = min(intersections)
+            [v1, v2] = self.edges[min_edge]
+            p1 = self.vertices[v1]
+            p2 = self.vertices[v2]
+            vec_1 = np.array(list(p2-p1)+[0.])
+            vec_2 = np.array(list(hole-p1)+[0.])
+
+            current_edge = min_edge
+            if np.cross(vec_1, vec_2)[2]< 0.:
+                current_vertex = v1
+            else:
+                current_vertex = v2
+
+            [next_edge, next_vertex, other_vertex] = self.find_next_edge_vertex_cc(current_edge, current_vertex)
+            to_be_removed = []
+            while next_edge != min_edge:
+                if next_edge in self.fracture_edges:
+                    to_be_removed.append(next_edge)
+                    [next_edge, next_vertex, other_vertex] = self.find_next_edge_vertex_cc(next_edge, other_vertex)
+                else:
+                    [next_edge, next_vertex, other_vertex] = self.find_next_edge_vertex_cc(next_edge, next_vertex)
+
+            to_be_removed = list(set(to_be_removed))
+            to_be_removed.sort()
+            to_be_removed.reverse()
+            for edge_index in to_be_removed:
+                self.remove_edge(edge_index)
+    
     def do_polygons(self, line):
         """ Compute all polygons in the graph.
         """
@@ -429,6 +490,7 @@ class Mesher(cmd.Cmd):
             current_path = [self.vertices[current_v1], self.vertices[current_v2]]
             current_index_path = [[edge_index, 1]]
             direction_sum += direction_int(current_v1, current_v2)
+
             ## Loop counter-clockwise
             next_edge = self.find_next_edge_cc(edge_index, current_v2)
 
@@ -586,12 +648,19 @@ class Mesher(cmd.Cmd):
             edge_index = edge_index + len(self.edges)
         self.fracture_edges.append(edge_index)
         
+    def do_set_depth(self, line):
+        """ Sets the reservoir depth when extruding 
+        into 3D for mimpy mesh output. 
+        """
+        self.reservoir_depth = float(line)
+
     def do_mimpy_mesh(self, line):
         """ Produces a mimpy mesh from the 
         graph and stores in the filename specified.  
         """
         res_mesh = mesh.Mesh()
-        
+        res_mesh.use_face_shifted_centroid()
+
         file_name = line
         res_mesh.dim = 3
 
@@ -599,7 +668,7 @@ class Mesher(cmd.Cmd):
             res_mesh.add_point(np.array([point[0], point[1], 0.]))
         
         for (index, point) in enumerate(self.vertices):
-            new_index = res_mesh.add_point(np.array([point[0],point[1], -1.]))
+            new_index = res_mesh.add_point(np.array([point[0],point[1], self.reservoir_depth]))
 
         done_edges = set()
         edge_to_face_map = {}
@@ -638,6 +707,7 @@ class Mesher(cmd.Cmd):
                     (area, centroid) = res_mesh.find_face_centroid(new_face_index)
                     res_mesh.set_face_area(new_face_index, area)
                     res_mesh.set_face_real_centroid(new_face_index, centroid)
+                    res_mesh.set_face_shifted_centroid(new_face_index, centroid)
 
                     current_cell.append(new_face_index)
                     current_cell_orientations.append(1)
@@ -651,6 +721,7 @@ class Mesher(cmd.Cmd):
             (area, centroid) = res_mesh.find_face_centroid(top_face_index)
             res_mesh.set_face_area(top_face_index, area)
             res_mesh.set_face_real_centroid(top_face_index, centroid)
+            res_mesh.set_face_shifted_centroid(top_face_index, centroid)
 
             bot_face_index = res_mesh.add_face(bot_face)
             
@@ -659,6 +730,7 @@ class Mesher(cmd.Cmd):
             (area, centroid) = res_mesh.find_face_centroid(bot_face_index)
             res_mesh.set_face_area(bot_face_index, area)
             res_mesh.set_face_real_centroid(bot_face_index, centroid)
+            res_mesh.set_face_shifted_centroid(top_face_index, centroid)
 
             res_mesh.add_boundary_face(0,  bot_face_index, -1)
             res_mesh.add_boundary_face(1,  top_face_index, 1)
