@@ -30,6 +30,9 @@ setup(
     author="Omar Al-Hinai",
     author_email='ohinai@gmail.com',
     url='https://github.com/ohinai/mesher',
+    entry_points = {
+        'console_scripts': [
+            'mesher = mesher.mesher:main']}, 
     packages=[
         'mesher',
     ],

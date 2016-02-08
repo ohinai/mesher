@@ -1,8 +1,9 @@
-
+#! /usr/bin/env python
 import cmd 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
+from matplotlib.font_manager import FontProperties
 import matplotlib 
 import pylab 
 import matplotlib.patches as patches
@@ -14,6 +15,8 @@ import matplotlib.image as mpimg
 
 import sys 
 import io
+
+import random
 
 from mimpy.mesh import mesh
 
@@ -59,7 +62,6 @@ def is_point_on_line(point, a1, a2):
         return True
     return False
 
-
 class Mesher(cmd.Cmd):
     
     show_edges = True
@@ -71,7 +73,7 @@ class Mesher(cmd.Cmd):
     def __init__(self): 
         cmd.Cmd.__init__(self)
 
-        self.threshold = 1.e-9
+        self.threshold = 1.e-5
         self.point_threshold = 1.e-3
         
         self.vertices = []
@@ -79,6 +81,8 @@ class Mesher(cmd.Cmd):
         self.vert_to_edge = {}
 
         self.bounding_box = [[0., 0.], [0., 0.]]
+
+        self.holes = []
 
         self.polygons = None
         self.boundaries = None
@@ -88,6 +92,8 @@ class Mesher(cmd.Cmd):
         self.session = []
         
         self.highlight_edges = None
+
+        self.reservoir_depth = 1.
 
         ## Maintains the indices of the last 
         ## vertices to be added to the graph. 
@@ -285,7 +291,47 @@ class Mesher(cmd.Cmd):
                          [point1[1], point2[1]], 'k-', color = 'y', linewidth = 8.)
 
         plt.axis('off')
-        plt.show()        
+        plt.show()
+
+    def do_save_pdf(self, line):
+        """ Saves the figure as a pdf. 
+        """
+        plt.clf()
+        font1 = FontProperties()
+        font1.set_size(1)
+        if self.show_vertices:
+            for (index, point) in enumerate(self.vertices):
+                plt.scatter(point[0], point[1])
+                if self.show_vertex_numbering:
+                    plt.text(point[0], point[1], str(index), fontproperties=font1)
+
+        if self.show_edges:
+            for edge_index in self.fracture_edges:
+                edge = self.edges[edge_index]
+                point1 = self.vertices[edge[0]]
+                point2 = self.vertices[edge[1]]
+                plt.plot([point1[0], point2[0]], 
+                         [point1[1], point2[1]], 'k-', color = 'r', linewidth = 7.)
+                
+            for (index, edge) in enumerate(self.edges):
+                point1 = self.vertices[edge[0]]
+                point2 = self.vertices[edge[1]]
+                plt.plot([point1[0], point2[0]], 
+                         [point1[1], point2[1]], 'k-')
+                if self.show_edge_numbering:
+                    mid_point = (point1+point2)/2.
+                    plt.text(mid_point[0], mid_point[1], str(index))
+
+            if self.highlight_edges != None:
+                edge = self.edges[self.highlight_edges]
+                point1 = self.vertices[edge[0]]
+                point2 = self.vertices[edge[1]]
+                plt.plot([point1[0], point2[0]], 
+                         [point1[1], point2[1]], 'k-', color = 'y', linewidth = 8.)
+
+        plt.axis('off')
+        name = line.split()[0]
+        pylab.savefig(name+".pdf")
         
     def do_remove_leaves(self, line):
         """ Remove all leaf edges. 
@@ -361,8 +407,23 @@ class Mesher(cmd.Cmd):
         couter-clockwise. 
         """
         local_index = self.vert_to_edge[vertex].index(edge_index)
-        next_edge = self.vert_to_edge[vertex][(local_index+1)%len(self.vert_to_edge[vertex])]
-        return next_edge
+        next_edge_index = self.vert_to_edge[vertex][(local_index+1)%len(self.vert_to_edge[vertex])]
+        return next_edge_index
+
+    def find_next_edge_vertex_cc(self, edge_index, vertex):
+        """ Finds next edge and vertex looping 
+        couter-clockwise. 
+        """
+        #local_index = self.vert_to_edge[vertex].index(edge_index)
+        #next_edge_index = self.vert_to_edge[vertex][(local_index+1)%len(self.vert_to_edge[vertex])]
+        #next_edge = self.edges[next_edge_index]
+        local_index = self.vert_to_edge[vertex].index(edge_index)
+        next_edge_index = self.vert_to_edge[vertex][local_index-1]
+        next_edge = self.edges[next_edge_index]
+        if next_edge[0] == vertex:
+            return next_edge_index, next_edge[1], next_edge[0]
+        else:
+            return next_edge_index, next_edge[0], next_edge[1]
 
     def find_next_edge_c(self, edge_index, vertex):
         """ Finds next edge looping 
@@ -372,8 +433,73 @@ class Mesher(cmd.Cmd):
         next_edge = self.vert_to_edge[vertex][local_index-1]
         return next_edge
 
+    def is_point_in_polygon(self, point, polygon, point_2 = None):
+        if point_2 == None:
+            point_2 = point + np.array([1., 0.])
+        intersection_count = 0
+        
+        for [edge, direction] in polygon:
+            [b1, b2] = self.edges[edge]
+            [p, ts] = line_line_intersection(self.vertices[b1], self.vertices[b2], point, point_2)
+            if abs(ts[0])<1.e-6 or abs(ts[0]-1.)<1.e-6:
+                return self.is_point_in_polygon(point, 
+                                                polygon, 
+                                                point_2 = point+np.array([random.random(), random.random()]))
+
+            elif ts[0]+self.threshold >= 0. and ts[0]-self.threshold <=1. and ts[1]+self.threshold>=0.:
+                intersection_count += 1
+        
+        if intersection_count%2==0:
+            return False
+
+        return True
+    
+    def do_remove_fractures_from_holes(self, line):
+        """ Removes fracture segments if 
+        they intersect a hole. 
+        """                
+        for hole in [self.holes[2]]:
+            intersections = []
+            point_2  = hole+np.array([random.random()*10., random.random()*10.])
+            for (edge_index, edge) in enumerate(self.edges):
+                if edge_index not in self.fracture_edges:
+                    p1 = self.vertices[edge[0]]
+                    p2 = self.vertices[edge[1]]
+                    (intersect, ts) = line_line_intersection(p1, p2, hole, point_2)
+                    if intersect != None:
+                        if -1.e-6<=ts[0]<=1.+1.e-6:
+                            intersections.append([abs(ts[1]), edge_index])
+
+            [_, min_edge] = min(intersections)
+            [v1, v2] = self.edges[min_edge]
+            p1 = self.vertices[v1]
+            p2 = self.vertices[v2]
+            vec_1 = np.array(list(p2-p1)+[0.])
+            vec_2 = np.array(list(hole-p1)+[0.])
+
+            current_edge = min_edge
+            if np.cross(vec_1, vec_2)[2]< 0.:
+                current_vertex = v1
+            else:
+                current_vertex = v2
+
+            [next_edge, next_vertex, other_vertex] = self.find_next_edge_vertex_cc(current_edge, current_vertex)
+            to_be_removed = []
+            while next_edge != min_edge:
+                if next_edge in self.fracture_edges:
+                    to_be_removed.append(next_edge)
+                    [next_edge, next_vertex, other_vertex] = self.find_next_edge_vertex_cc(next_edge, other_vertex)
+                else:
+                    [next_edge, next_vertex, other_vertex] = self.find_next_edge_vertex_cc(next_edge, next_vertex)
+
+            to_be_removed = list(set(to_be_removed))
+            to_be_removed.sort()
+            to_be_removed.reverse()
+            for edge_index in to_be_removed:
+                self.remove_edge(edge_index)
+    
     def do_polygons(self, line):
-        """ Compute all polgons in the graph.
+        """ Compute all polygons in the graph.
         """
         show_poly = False
         line_split = line.split()
@@ -403,6 +529,7 @@ class Mesher(cmd.Cmd):
             current_path = [self.vertices[current_v1], self.vertices[current_v2]]
             current_index_path = [[edge_index, 1]]
             direction_sum += direction_int(current_v1, current_v2)
+
             ## Loop counter-clockwise
             next_edge = self.find_next_edge_cc(edge_index, current_v2)
 
@@ -413,18 +540,17 @@ class Mesher(cmd.Cmd):
                 next_vertex = next_v2
                 direction_sum += direction_int(next_v1, next_v2)
                 counter_c_edges.remove(next_edge)
-                #done_edges.add((next_edge, 1))
                 current_index_path.append([next_edge, 1])
 
             elif next_v2 == current_v2:
                 next_vertex = next_v1
                 direction_sum += direction_int(next_v2, next_v1)
                 c_edges.remove(next_edge)
-                #done_edges.add((next_edge, -1))
                 current_index_path.append([next_edge, -1])
 
             else:
                 raise Exception("Problem traversing graph")
+
             while next_vertex != original_v1:
                 current_path.append(self.vertices[next_vertex])
 
@@ -476,18 +602,17 @@ class Mesher(cmd.Cmd):
                 next_vertex = next_v2
                 direction_sum += direction_int(next_v1, next_v2)
                 c_edges.remove(next_edge)
-                #done_edges.add((next_edge, -1))
                 current_index_path.append((next_edge, -1))
 
             elif next_v2 == current_v2:
                 next_vertex = next_v1
                 direction_sum += direction_int(next_v2, next_v1)
                 counter_c_edges.remove(next_edge)
-                #done_edges.add((next_edge, 1))
                 current_index_path.append((next_edge, 1))
 
             else:
                 raise Exception("Problem traversing graph")
+
             while next_vertex != original_v1:
                 current_path.append(self.vertices[next_vertex])
 
@@ -499,13 +624,11 @@ class Mesher(cmd.Cmd):
                     next_vertex = next_v2
                     direction_sum += direction_int(next_v1, next_v2)
                     c_edges.remove(next_edge)
-                    #done_edges.add((next_edge, -1))
                     current_index_path.append((next_edge, -1))
                 elif next_v2 == next_vertex:
                     next_vertex = next_v1                        
                     direction_sum += direction_int(next_v2, next_v1)
                     counter_c_edges.remove(next_edge)
-                    #done_edges.add((next_edge, 1))
                     current_index_path.append((next_edge, 1))
 
                 else:
@@ -518,10 +641,26 @@ class Mesher(cmd.Cmd):
                 paths.append(current_path)
                 current_index_path.reverse()
                 index_paths.append(current_index_path)
-                    
-        self.polygons = index_paths
+
+        add_poly = True
+        self.polygons = []
         self.boundaries = boundaries
-        
+
+        self.internal_boundaries = []
+
+        for polygon in index_paths:
+            for hole in self.holes:
+                if self.is_point_in_polygon(hole, polygon):
+                    add_poly = False
+            if add_poly:
+                self.polygons.append(polygon)
+                add_poly = True
+            else:
+                add_poly = True
+                self.internal_boundaries.append([])
+                for [edge, direction] in polygon:
+                    self.internal_boundaries[-1].append(edge)
+                    
         for boundary_index in boundaries:
             if boundary_index in self.fracture_edges:
                 self.fracture_edges.remove(boundary_index)
@@ -549,12 +688,19 @@ class Mesher(cmd.Cmd):
             edge_index = edge_index + len(self.edges)
         self.fracture_edges.append(edge_index)
         
+    def do_set_depth(self, line):
+        """ Sets the reservoir depth when extruding 
+        into 3D for mimpy mesh output. 
+        """
+        self.reservoir_depth = float(line)
+
     def do_mimpy_mesh(self, line):
         """ Produces a mimpy mesh from the 
         graph and stores in the filename specified.  
         """
         res_mesh = mesh.Mesh()
-        
+        res_mesh.use_face_shifted_centroid()
+
         file_name = line
         res_mesh.dim = 3
 
@@ -562,7 +708,7 @@ class Mesher(cmd.Cmd):
             res_mesh.add_point(np.array([point[0], point[1], 0.]))
         
         for (index, point) in enumerate(self.vertices):
-            new_index = res_mesh.add_point(np.array([point[0],point[1], -1.]))
+            new_index = res_mesh.add_point(np.array([point[0],point[1], self.reservoir_depth]))
 
         done_edges = set()
         edge_to_face_map = {}
@@ -601,6 +747,7 @@ class Mesher(cmd.Cmd):
                     (area, centroid) = res_mesh.find_face_centroid(new_face_index)
                     res_mesh.set_face_area(new_face_index, area)
                     res_mesh.set_face_real_centroid(new_face_index, centroid)
+                    res_mesh.set_face_shifted_centroid(new_face_index, centroid)
 
                     current_cell.append(new_face_index)
                     current_cell_orientations.append(1)
@@ -614,6 +761,7 @@ class Mesher(cmd.Cmd):
             (area, centroid) = res_mesh.find_face_centroid(top_face_index)
             res_mesh.set_face_area(top_face_index, area)
             res_mesh.set_face_real_centroid(top_face_index, centroid)
+            res_mesh.set_face_shifted_centroid(top_face_index, centroid)
 
             bot_face_index = res_mesh.add_face(bot_face)
             
@@ -622,6 +770,7 @@ class Mesher(cmd.Cmd):
             (area, centroid) = res_mesh.find_face_centroid(bot_face_index)
             res_mesh.set_face_area(bot_face_index, area)
             res_mesh.set_face_real_centroid(bot_face_index, centroid)
+            res_mesh.set_face_shifted_centroid(top_face_index, centroid)
 
             res_mesh.add_boundary_face(0,  bot_face_index, -1)
             res_mesh.add_boundary_face(1,  top_face_index, 1)
@@ -642,6 +791,14 @@ class Mesher(cmd.Cmd):
         for edge_index in self.boundaries:
             face_index = edge_to_face_map[edge_index]
             res_mesh.add_boundary_face(2, face_index, 1)
+        
+        for boundary_index in range(len(self.internal_boundaries)):
+            res_mesh.add_boundary_marker(boundary_index+3, "hole"+str(boundary_index))
+            for edge_index in self.internal_boundaries[boundary_index]:
+                face_index = edge_to_face_map[edge_index]
+                res_mesh.add_boundary_face(boundary_index+3, face_index, 1)
+
+        
 
         res_mesh.build_frac_from_faces([edge_to_face_map[edge_index] for edge_index in self.fracture_edges])
             
@@ -687,7 +844,7 @@ class Mesher(cmd.Cmd):
         edge_index = int(line.split()[0])
         self.highlight_edges=edge_index
 
-    def add_vertex(self, point, point_threshold = None):
+    def add_vertex(self, point, point_threshold = None, check_threshold = True):
         """ Adds new vertex, returns 
         vertex index. 
         """
@@ -696,9 +853,10 @@ class Mesher(cmd.Cmd):
         else:
             point_threshold = self.point_threshold
         vertex_index = -1
-        for (point_index, current_point) in enumerate(self.vertices):
-            if np.linalg.norm(point-current_point)<point_threshold:
-                vertex_index = point_index
+        if check_threshold:
+            for (point_index, current_point) in enumerate(self.vertices):
+                if np.linalg.norm(point-current_point)<point_threshold:
+                    vertex_index = point_index
         if vertex_index < 0:
             self.vertices.append(point)
             vertex_index = len(self.vertices)-1            
@@ -718,6 +876,12 @@ class Mesher(cmd.Cmd):
         new_point = np.array(map(float, line.split()))
         new_index = self.add_vertex(new_point)
         print "new vertex", "[", new_index, "]", new_point
+
+    def do_add_hole(self, line):
+        new_point = np.array(map(float, line.split()))
+
+        print "adding hole at [", len(self.holes),"]", new_point[0], new_point[1] 
+        self.holes.append(new_point)
 
     def find_cc_position(self, index_v1, index_v2, edges):
         """ Given edge p1->p2, find position so that 
@@ -749,7 +913,7 @@ class Mesher(cmd.Cmd):
             if  np.linalg.norm(v2) < self.threshold:
                 raise Exception("edge length too small")
             if abs(v1.dot(v2)/np.linalg.norm(v2)-
-                    np.linalg.norm(np.array(v1)))<self.threshold:
+                   np.linalg.norm(np.array(v1)))<self.threshold:
                 return index
             if np.cross(np.array([v1[0], v1[1], 0.]),
                         np.array([v2[0], v2[1], 0.]))[2] > 0.:
@@ -873,7 +1037,7 @@ class Mesher(cmd.Cmd):
             else:
                 current_point1 = self.vertices[current_edge[0]]
                 current_point2 = self.vertices[current_edge[1]]
-                
+
                 (intersection, param) = line_line_intersection(point1,
                                                                point2,
                                                                current_point1,
@@ -890,7 +1054,7 @@ class Mesher(cmd.Cmd):
                     else:
                         merge2 = current_edge[1]
                     to_be_merged.append([merge1, merge2])
-                    pass
+
                 elif 0.-self.threshold<=param[0]<=1.+self.threshold \
                         and 0.-self.threshold<=param[1]<=1.+self.threshold:
                     if abs(param[0])<self.threshold:
@@ -909,7 +1073,6 @@ class Mesher(cmd.Cmd):
                             edge_mod.append([current_index, new_point])
                             segments.append([param[0], new_point])
 
-
         #for (merge1, merge2) in to_be_merged:
         #    self.merge_two_vertices(merge1, merge2)
 
@@ -918,10 +1081,14 @@ class Mesher(cmd.Cmd):
             point_index = current_mod[1]
             if  point_index != self.edges[current_index][1]:
                 new_edge = self.add_edge(point_index, self.edges[current_index][1])
+                p1 = self.vertices[self.edges[current_index][0]]
+                p2 = self.vertices[point_index]
+                if np.linalg.norm(p1-p2)<self.threshold:
+                    print "HERE", p1
                 self.set_edge(current_index, self.edges[current_index][0], point_index)
                 if current_index in self.fracture_edges:
                     self.fracture_edges.append(new_edge)
-            
+
         segments.sort()
 
         done_edges = set()
@@ -933,7 +1100,6 @@ class Mesher(cmd.Cmd):
                     pass
                 elif segments[seg_index][1]==new_segments[-1][1]:
                     pass
-
                 else:
                     new_segments.append(segments[seg_index])
             segments = new_segments
@@ -954,7 +1120,6 @@ class Mesher(cmd.Cmd):
                     done_edges.add(new_edge_index)
                     if add_to_frac:
                         self.fracture_edges.append(new_edge_index)
-        
 
         self.remove_list_edges(to_be_removed)
 
@@ -1159,6 +1324,27 @@ class Mesher(cmd.Cmd):
         if index < 0 :
             index = len(self.edges)+index
         self.remove_edge(index)
+        
+    def do_get_vertex(self, line):
+        """ Returns vertex coordinates. 
+        """
+        try:
+            print self.vertices[int(line)]
+        except:
+            print "No such vertex", line
+
+    def do_find_vertex(self, line):
+        """ Finds vertex closest to point. 
+        """
+        line_split = line.split()
+        point = np.array([float(line_split[0]), float(line_split[1])])
+        min = 100000
+        min_vertex = -1
+        for (vertex_index, vertex) in enumerate(self.vertices):
+            if np.linalg.norm(vertex-point) < min:
+                min = np.linalg.norm(vertex-point)
+                min_vertex  = vertex_index
+        print min_vertex, min
 
     def do_intersect_all(self, line):
         """ Intersect all edges. 
@@ -1238,12 +1424,7 @@ class Mesher(cmd.Cmd):
             for i in range(nx+1):
                 for j in range(ny+1):
                     new_point = np.array([i*dx+x_start, j*dy+y_start])
-                    new_point_index = None
-                    for index in range(len(self.vertices)):
-                        if np.linalg.norm(new_point - self.vertices[index])<self.threshold:
-                            new_point_index = index
-                    if new_point_index == None:
-                        new_point_index = self.add_vertex(new_point)
+                    new_point_index = self.add_vertex(new_point, check_threshold = False)
                     ij_to_point[(i, j)] = new_point_index
 
         else:
@@ -1259,12 +1440,8 @@ class Mesher(cmd.Cmd):
                         pass
                     else:
                         new_point = np.array([i*dx+x_start, j*dy+y_start])
-                        new_point_index = None
-                        for index in range(len(self.vertices)):
-                            if np.linalg.norm(new_point - self.vertices[index])<self.threshold:
-                                new_point_index = index
-                        if new_point_index == None:        
-                            new_point_index = self.add_vertex(new_point)                                           
+                        new_point_index = self.add_vertex(new_point,
+                                                          check_threshold = False)
                         ij_to_point[(i, j)] = new_point_index
         
 
@@ -1349,8 +1526,8 @@ class Mesher(cmd.Cmd):
                                   ij_to_point[(i, j+1)])
                   
 
-if __name__ == "__main__":
-    
+def main():
+
     local_mesher = Mesher()
 
     if len(sys.argv)>1:
@@ -1361,3 +1538,8 @@ if __name__ == "__main__":
             print "Cannot open ", sys.argv[1]
     else:
         local_mesher.cmdloop()
+    
+
+if __name__ == "__main__":
+
+    main()
