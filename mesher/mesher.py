@@ -3,6 +3,7 @@ import cmd
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
+from matplotlib.font_manager import FontProperties
 import matplotlib 
 import pylab 
 import matplotlib.patches as patches
@@ -60,8 +61,6 @@ def is_point_on_line(point, a1, a2):
     if abs(v2_dot_v1-np.linalg.norm(v2))<1.e-8:
         return True
     return False
-
-
 
 class Mesher(cmd.Cmd):
     
@@ -292,7 +291,47 @@ class Mesher(cmd.Cmd):
                          [point1[1], point2[1]], 'k-', color = 'y', linewidth = 8.)
 
         plt.axis('off')
-        plt.show()        
+        plt.show()
+
+    def do_save_pdf(self, line):
+        """ Saves the figure as a pdf. 
+        """
+        plt.clf()
+        font1 = FontProperties()
+        font1.set_size(1)
+        if self.show_vertices:
+            for (index, point) in enumerate(self.vertices):
+                plt.scatter(point[0], point[1])
+                if self.show_vertex_numbering:
+                    plt.text(point[0], point[1], str(index), fontproperties=font1)
+
+        if self.show_edges:
+            for edge_index in self.fracture_edges:
+                edge = self.edges[edge_index]
+                point1 = self.vertices[edge[0]]
+                point2 = self.vertices[edge[1]]
+                plt.plot([point1[0], point2[0]], 
+                         [point1[1], point2[1]], 'k-', color = 'r', linewidth = 7.)
+                
+            for (index, edge) in enumerate(self.edges):
+                point1 = self.vertices[edge[0]]
+                point2 = self.vertices[edge[1]]
+                plt.plot([point1[0], point2[0]], 
+                         [point1[1], point2[1]], 'k-')
+                if self.show_edge_numbering:
+                    mid_point = (point1+point2)/2.
+                    plt.text(mid_point[0], mid_point[1], str(index))
+
+            if self.highlight_edges != None:
+                edge = self.edges[self.highlight_edges]
+                point1 = self.vertices[edge[0]]
+                point2 = self.vertices[edge[1]]
+                plt.plot([point1[0], point2[0]], 
+                         [point1[1], point2[1]], 'k-', color = 'y', linewidth = 8.)
+
+        plt.axis('off')
+        name = line.split()[0]
+        pylab.savefig(name+".pdf")
         
     def do_remove_leaves(self, line):
         """ Remove all leaf edges. 
@@ -804,7 +843,7 @@ class Mesher(cmd.Cmd):
         edge_index = int(line.split()[0])
         self.highlight_edges=edge_index
 
-    def add_vertex(self, point, point_threshold = None):
+    def add_vertex(self, point, point_threshold = None, check_threshold = True):
         """ Adds new vertex, returns 
         vertex index. 
         """
@@ -813,9 +852,10 @@ class Mesher(cmd.Cmd):
         else:
             point_threshold = self.point_threshold
         vertex_index = -1
-        for (point_index, current_point) in enumerate(self.vertices):
-            if np.linalg.norm(point-current_point)<point_threshold:
-                vertex_index = point_index
+        if check_threshold:
+            for (point_index, current_point) in enumerate(self.vertices):
+                if np.linalg.norm(point-current_point)<point_threshold:
+                    vertex_index = point_index
         if vertex_index < 0:
             self.vertices.append(point)
             vertex_index = len(self.vertices)-1            
@@ -1292,6 +1332,19 @@ class Mesher(cmd.Cmd):
         except:
             print "No such vertex", line
 
+    def do_find_vertex(self, line):
+        """ Finds vertex closest to point. 
+        """
+        line_split = line.split()
+        point = np.array([float(line_split[0]), float(line_split[1])])
+        min = 100000
+        min_vertex = -1
+        for (vertex_index, vertex) in enumerate(self.vertices):
+            if np.linalg.norm(vertex-point) < min:
+                min = np.linalg.norm(vertex-point)
+                min_vertex  = vertex_index
+        print min_vertex, min
+
     def do_intersect_all(self, line):
         """ Intersect all edges. 
         """
@@ -1370,12 +1423,7 @@ class Mesher(cmd.Cmd):
             for i in range(nx+1):
                 for j in range(ny+1):
                     new_point = np.array([i*dx+x_start, j*dy+y_start])
-                    new_point_index = None
-                    for index in range(len(self.vertices)):
-                        if np.linalg.norm(new_point - self.vertices[index])<self.threshold:
-                            new_point_index = index
-                    if new_point_index == None:
-                        new_point_index = self.add_vertex(new_point)
+                    new_point_index = self.add_vertex(new_point, check_threshold = False)
                     ij_to_point[(i, j)] = new_point_index
 
         else:
@@ -1391,12 +1439,8 @@ class Mesher(cmd.Cmd):
                         pass
                     else:
                         new_point = np.array([i*dx+x_start, j*dy+y_start])
-                        new_point_index = None
-                        for index in range(len(self.vertices)):
-                            if np.linalg.norm(new_point - self.vertices[index])<self.threshold:
-                                new_point_index = index
-                        if new_point_index == None:        
-                            new_point_index = self.add_vertex(new_point)                                           
+                        new_point_index = self.add_vertex(new_point,
+                                                          check_threshold = False)
                         ij_to_point[(i, j)] = new_point_index
         
 
