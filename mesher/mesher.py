@@ -89,6 +89,8 @@ class Mesher(cmd.Cmd):
 
         self.fracture_edges = []
 
+        self.frac_width = .005
+
         self.session = []
         
         self.highlight_edges = None
@@ -687,6 +689,11 @@ class Mesher(cmd.Cmd):
         if edge_index < 0:
             edge_index = edge_index + len(self.edges)
         self.fracture_edges.append(edge_index)
+    
+    def do_set_fracture_width(self, line):
+        """ Sets width of fractures. 
+        """
+        self.frac_width = float(line.split()[0])
         
     def do_set_depth(self, line):
         """ Sets the reservoir depth when extruding 
@@ -800,7 +807,7 @@ class Mesher(cmd.Cmd):
 
         
 
-        res_mesh.build_frac_from_faces([edge_to_face_map[edge_index] for edge_index in self.fracture_edges])
+        res_mesh.build_frac_from_faces([edge_to_face_map[edge_index] for edge_index in self.fracture_edges], width=self.frac_width)
             
         res_mesh.output_vtk_mesh(file_name, [res_mesh.get_cell_domain_all(),], ["DOMAIN"])
         
