@@ -458,7 +458,7 @@ class Mesher(cmd.Cmd):
         """ Removes fracture segments if 
         they intersect a hole. 
         """                
-        for hole in [self.holes[2]]:
+        for hole in self.holes:
             intersections = []
             point_2  = hole+np.array([random.random()*10., random.random()*10.])
             for (edge_index, edge) in enumerate(self.edges):
