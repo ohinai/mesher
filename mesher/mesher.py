@@ -193,7 +193,6 @@ class Mesher(cmd.Cmd):
             
             self.fracture_edges.append(int(line_split[0]))
             
-
     def do_save_session(self, line):
         """ Save session in file. 
         """
@@ -337,11 +336,13 @@ class Mesher(cmd.Cmd):
         """ Remove all leaf edges. 
         """
         (single_sided, no_sided) = self.find_leaf_edges()
-        to_be_removed = list(single_sided) + list(no_sided)
-        to_be_removed.sort()
-        to_be_removed.reverse()
-        for edge_index in to_be_removed:
-            self.remove_edge(edge_index)
+        while len(single_sided)>0 or len(no_sided)>0:
+            to_be_removed = list(single_sided) + list(no_sided)
+            to_be_removed.sort()
+            to_be_removed.reverse()
+            for edge_index in to_be_removed:
+                self.remove_edge(edge_index)
+            (single_sided, no_sided) = self.find_leaf_edges()
 
     def do_mo_evtoe(self, line):
         """ Shifts vertex edge to by on existing edge. 
@@ -671,7 +672,7 @@ class Mesher(cmd.Cmd):
             p = PatchCollection(patches,cmap=matplotlib.cm.jet,  alpha=1.0)
             
             p.set_array(np.random.rand(len(paths)))
-            p.set_array(np.ones(len(paths)))
+            p.set_array(np.random.random(len(paths)))
             ax.add_collection(p)
             p.set_clim([0., 1.])
 
@@ -679,6 +680,12 @@ class Mesher(cmd.Cmd):
             
             pylab.show()
     
+    def do_set_scale(self, line):
+        """ Sets scale of problem. 
+        """
+        scale = float(line.split()[0])
+        self.threshold = scale*1.e-6
+        self.point_threshold = scale*1.e-4
     def do_set_fracture(self, line):
         """ Sets edge as fracture edge. 
         """
@@ -910,7 +917,7 @@ class Mesher(cmd.Cmd):
             v2 = p2-point
             ## Check if colinear with existing edge.
             if  np.linalg.norm(v2) < self.threshold:
-                raise Exception("edge length too small")
+                raise Exception("edge length too small "+str(index_v1)+" "+str(index_v2))
             if abs(v1.dot(v2)/np.linalg.norm(v2)-
                    np.linalg.norm(np.array(v1)))<self.threshold:
                 return index
@@ -1012,7 +1019,7 @@ class Mesher(cmd.Cmd):
 
         self.edges[edge_index][0] = v1
         self.edges[edge_index][1] = v2
-
+        
         self.update_v_to_e(edge_index, v1, v2)
 
     def intersect_edge(self, edge_index):
