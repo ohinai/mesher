@@ -1156,7 +1156,7 @@ class Mesher(cmd.Cmd):
                 if is_point_on_line(current_point1, point1, point2) and\
                         is_point_on_line(current_point2, point1, point2):
                     to_be_removed.append(current_index)
-                    print current_index
+                    print "remove", current_index, "due to overlap"
                 elif is_point_on_line(current_point1, point1, point2) and\
                         is_point_on_ray(current_point2, point1, point2):
                     if np.linalg.norm(point1-current_point2) <\
