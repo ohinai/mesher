@@ -89,6 +89,8 @@ class Mesher(cmd.Cmd):
 
         self.fracture_edges = []
 
+        self.frac_width = .005
+
         self.session = []
         
         self.highlight_edges = None
@@ -563,6 +565,7 @@ class Mesher(cmd.Cmd):
                 if next_v1 == next_vertex:
                     next_vertex = next_v2
                     direction_sum += direction_int(next_v1, next_v2)
+                    #print "edge index", edge_index
                     counter_c_edges.remove(next_edge)
                     current_index_path.append([next_edge, 1])
 
@@ -660,11 +663,26 @@ class Mesher(cmd.Cmd):
                 self.internal_boundaries.append([])
                 for [edge, direction] in polygon:
                     self.internal_boundaries[-1].append(edge)
-                    
+
+        ## If fracture edge on boundary, remove from 
+        ## from fracture list. 
+        to_be_removed = []
         for boundary_index in boundaries:
             if boundary_index in self.fracture_edges:
-                self.fracture_edges.remove(boundary_index)
+                to_be_removed.append(boundary_index)
+                
+        ## Remove fracs from internal boundaries (holes) too.  
+        for ib in self.internal_boundaries:
+            for boundary_index in ib:
+                if boundary_index in self.fracture_edges:
+                    to_be_removed.append(boundary_index)
 
+        to_be_removed = list(set(to_be_removed))
+        to_be_removed.sort()
+        to_be_removed.reverse()
+        for edge_index in to_be_removed:
+            self.fracture_edges.remove(edge_index)            
+                
         if show_poly:
             fig=pylab.figure()
             ax=fig.add_subplot(111)
@@ -686,6 +704,7 @@ class Mesher(cmd.Cmd):
         scale = float(line.split()[0])
         self.threshold = scale*1.e-6
         self.point_threshold = scale*1.e-4
+
     def do_set_fracture(self, line):
         """ Sets edge as fracture edge. 
         """
@@ -693,6 +712,11 @@ class Mesher(cmd.Cmd):
         if edge_index < 0:
             edge_index = edge_index + len(self.edges)
         self.fracture_edges.append(edge_index)
+    
+    def do_set_fracture_width(self, line):
+        """ Sets width of fractures. 
+        """
+        self.frac_width = float(line.split()[0])
         
     def do_set_depth(self, line):
         """ Sets the reservoir depth when extruding 
@@ -806,7 +830,7 @@ class Mesher(cmd.Cmd):
 
         
 
-        res_mesh.build_frac_from_faces([edge_to_face_map[edge_index] for edge_index in self.fracture_edges])
+        res_mesh.build_frac_from_faces([edge_to_face_map[edge_index] for edge_index in self.fracture_edges], width=self.frac_width)
             
         res_mesh.output_vtk_mesh(file_name, [res_mesh.get_cell_domain_all(),], ["DOMAIN"])
         
@@ -1155,7 +1179,7 @@ class Mesher(cmd.Cmd):
                 if is_point_on_line(current_point1, point1, point2) and\
                         is_point_on_line(current_point2, point1, point2):
                     to_be_removed.append(current_index)
-                    print current_index
+                    print "remove", current_index, "due to overlap"
                 elif is_point_on_line(current_point1, point1, point2) and\
                         is_point_on_ray(current_point2, point1, point2):
                     if np.linalg.norm(point1-current_point2) <\
