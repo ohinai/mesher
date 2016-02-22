@@ -703,6 +703,7 @@ class Mesher(cmd.Cmd):
         scale = float(line.split()[0])
         self.threshold = scale*1.e-6
         self.point_threshold = scale*1.e-4
+
     def do_set_fracture(self, line):
         """ Sets edge as fracture edge. 
         """
