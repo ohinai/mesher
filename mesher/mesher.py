@@ -670,7 +670,8 @@ class Mesher(cmd.Cmd):
         for boundary_index in boundaries:
             if boundary_index in self.fracture_edges:
                 to_be_removed.append(boundary_index)
-
+                
+        ## Remove fracs from internal boundaries (holes) too.  
         for ib in self.internal_boundaries:
             for boundary_index in ib:
                 if boundary_index in self.fracture_edges:
