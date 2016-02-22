@@ -663,11 +663,25 @@ class Mesher(cmd.Cmd):
                 self.internal_boundaries.append([])
                 for [edge, direction] in polygon:
                     self.internal_boundaries[-1].append(edge)
-                    
+
+        ## If fracture edge on boundary, remove from 
+        ## from fracture list. 
+        to_be_removed = []
         for boundary_index in boundaries:
             if boundary_index in self.fracture_edges:
-                self.fracture_edges.remove(boundary_index)
+                to_be_removed.append(boundary_index)
 
+        for ib in self.internal_boundaries:
+            for boundary_index in ib:
+                if boundary_index in self.fracture_edges:
+                    to_be_removed.append(boundary_index)
+
+        to_be_removed = list(set(to_be_removed))
+        to_be_removed.sort()
+        to_be_removed.reverse()
+        for edge_index in to_be_removed:
+            self.fracture_edges.remove(edge_index)            
+                
         if show_poly:
             fig=pylab.figure()
             ax=fig.add_subplot(111)
